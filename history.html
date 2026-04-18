@@ -1,0 +1,936 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#09131d" />
+		<link rel="stylesheet" href="jquery/jquery-ui-1.11.4-smoothness.css" />
+		<link rel="icon" href="favicon.ico" />
+		<link rel="stylesheet" href="ol/v6.3.1/ol.css" type="text/css" />
+		<link rel="stylesheet" type="text/css" href="modern-ui.css?v=1.1" />
+		<script src="jquery/jquery-3.0.0.min.js"></script>
+		<script src="ol/v6.3.1/ol.js" type="text/javascript"></script>
+		<script>
+			window.MODERN_HISTORY_API_BASE = "/history-api";
+			window.MODERN_IMAGE_CACHE_API_BASE = "/image-cache";
+		</script>
+		<title>PiAware SkyAware History</title>
+		<style>
+			.historyShell {
+				height: 100dvh;
+				min-height: 100dvh;
+			}
+
+			.historyLayout {
+				display: grid;
+				grid-template-columns: minmax(320px, 420px) 1fr;
+				gap: 18px;
+				height: calc(100dvh - var(--header-h));
+				min-height: 0;
+				padding: 18px;
+				box-sizing: border-box;
+			}
+
+			.historyPanel,
+			.historyMapCard {
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg);
+				background: var(--bg-elevated);
+				backdrop-filter: blur(18px);
+				box-shadow: var(--shadow);
+				min-height: 0;
+			}
+
+			.historyPanel {
+				display: flex;
+				flex-direction: column;
+				padding: 16px;
+				overflow: hidden;
+				min-height: 0;
+			}
+
+			.historySearch {
+				display: grid;
+				grid-template-columns: 1fr auto;
+				gap: 10px;
+				margin-bottom: 14px;
+			}
+
+			.historyStatRow {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 8px;
+				margin-bottom: 14px;
+			}
+
+			.historyStat {
+				padding: 10px 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 14px;
+				background: rgba(255,255,255,0.03);
+			}
+
+			.historyStatLabel {
+				color: var(--muted);
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+
+			.historyStatValue {
+				margin-top: 6px;
+				font-family: var(--font-display);
+				font-size: 1.2rem;
+				font-weight: 700;
+				color: var(--text);
+			}
+
+			.historyColumns {
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				flex: 1 1 auto;
+				min-height: 0;
+				overflow: hidden;
+			}
+
+			.historyFlightPicker {
+				margin-bottom: 12px;
+				padding: 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 14px;
+				background: rgba(255,255,255,0.03);
+			}
+
+			.historyFlightPickerLabel {
+				margin-bottom: 8px;
+				color: var(--accent-strong);
+				font-size: 12px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+			}
+
+			.historyFlightSelect {
+				width: 100%;
+			}
+
+			.historyFlightHint {
+				margin-top: 8px;
+				color: var(--muted);
+				font-size: 12px;
+				line-height: 1.4;
+			}
+
+			.historyRecentPicker {
+				padding: 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 14px;
+				background: rgba(255,255,255,0.03);
+			}
+
+			.historyChipRow {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-top: 8px;
+			}
+
+			.historyChip {
+				padding: 8px 12px;
+				border: 1px solid rgba(255,255,255,0.1);
+				border-radius: 999px;
+				background: rgba(255,255,255,0.03);
+				color: var(--text);
+				cursor: pointer;
+				font-size: 12px;
+				font-weight: 700;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
+			}
+
+			.historyChip.active {
+				border-color: rgba(120, 227, 255, 0.35);
+				background: rgba(77, 197, 255, 0.12);
+				color: var(--accent-strong);
+			}
+
+			.historySection {
+				flex: 1 1 auto;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				overflow: hidden;
+			}
+
+			.historySectionTitle {
+				margin: 0 0 8px;
+				font-size: 12px;
+				font-weight: 700;
+				color: var(--accent-strong);
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+
+			.historyList {
+				margin: 0;
+				padding: 0;
+				list-style: none;
+				display: flex;
+				flex-direction: column;
+				flex: 1 1 auto;
+				gap: 8px;
+				min-height: 0;
+				overflow: auto;
+			}
+
+			.historyItem {
+				padding: 11px 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 14px;
+				background: rgba(255,255,255,0.03);
+				cursor: pointer;
+			}
+
+			.historyItem.active {
+				border-color: rgba(120, 227, 255, 0.35);
+				background: rgba(77, 197, 255, 0.08);
+			}
+
+			.historyItemTitle {
+				color: var(--text);
+				font-weight: 700;
+			}
+
+			.historyItemMeta {
+				margin-top: 4px;
+				color: var(--muted);
+				font-size: 12px;
+			}
+
+			.historyMapCard {
+				position: relative;
+				overflow: hidden;
+				min-height: 560px;
+			}
+
+			#history_map {
+				width: 100%;
+				height: 100%;
+			}
+
+			.historyMapMeta {
+				position: absolute;
+				top: 18px;
+				left: 18px;
+				z-index: 2;
+				max-width: min(420px, calc(100% - 36px));
+				padding: 14px 16px;
+				border: 1px solid rgba(255,255,255,0.12);
+				border-radius: 18px;
+				background: rgba(8, 16, 26, 0.86);
+				backdrop-filter: blur(14px);
+			}
+
+			.historyMapMetaInner {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) 92px;
+				align-items: flex-start;
+				gap: 8px;
+			}
+
+			.historyMapCopy {
+				min-width: 0;
+			}
+
+			.historyMapTitle {
+				color: var(--text);
+				font-family: var(--font-display);
+				font-size: 1.35rem;
+				font-weight: 700;
+			}
+
+			.historyMapBody {
+				margin-top: 6px;
+				color: var(--muted);
+				font-size: 13px;
+				line-height: 1.45;
+				word-break: break-word;
+			}
+
+			.historyThumbCard {
+				width: 92px;
+				justify-self: end;
+			}
+
+			.historyThumbButton {
+				display: block;
+				width: 100%;
+				padding: 0;
+				border: 0;
+				background: transparent;
+				cursor: pointer;
+				text-align: left;
+			}
+
+			.historyThumbImage {
+				display: block;
+				width: 100%;
+				aspect-ratio: 1 / 1;
+				object-fit: cover;
+				border-radius: 12px;
+				background: rgba(255,255,255,0.04);
+			}
+
+			.historyThumbTitle {
+				display: none;
+			}
+
+			.historyThumbCaption {
+				display: none;
+			}
+
+			@media (max-width: 980px) {
+				.historyShell {
+					height: auto;
+					min-height: 100dvh;
+				}
+
+				.historyLayout {
+					grid-template-columns: 1fr;
+					height: auto;
+					min-height: calc(100dvh - var(--header-h));
+					grid-template-rows: auto minmax(420px, 56dvh);
+				}
+
+				.historyMapMetaInner {
+					grid-template-columns: 1fr;
+				}
+
+				.historyThumbCard {
+					width: 84px;
+					justify-self: start;
+				}
+
+				.historyMapCard {
+					min-height: 420px;
+				}
+			}
+		</style>
+	</head>
+	<body class="modern-shell historyShell">
+		<div id="header" class="infoHeading">
+			<div class="logoContainer">
+				<a href="http://flightaware.com/" target="_blank"><img src="images/fa_logo_color.png" alt="FlightAware" class="flightawareLogo"></a>
+				<div class="modernBrandCopy">
+					<div class="modernEyebrow">History View</div>
+					<div class="modernHeadline">Browse aircraft, flights, and receiver-side path history.</div>
+				</div>
+			</div>
+			<div class="menuContainer">
+				<div class="dateTime" id="clock_div"></div>
+				<div class="buttonContainer">
+					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
+					<a class="button buttonHeader" href="history-stats.html"><span class="buttonText">History Stats</span></a>
+				</div>
+			</div>
+		</div>
+
+		<div class="historyLayout">
+			<section class="historyPanel">
+				<div class="historySearch">
+					<input id="history_search" class="aircraftFilterInput" type="text" placeholder="Search">
+					<button id="history_refresh" class="button buttonHeader" type="button"><span class="buttonText">Refresh</span></button>
+				</div>
+
+				<div class="historyStatRow">
+					<div class="historyStat">
+						<div class="historyStatLabel">Aircraft</div>
+						<div class="historyStatValue" id="history_aircraft_count">0</div>
+					</div>
+					<div class="historyStat">
+						<div class="historyStatLabel">Flights</div>
+						<div class="historyStatValue" id="history_flight_count">0</div>
+					</div>
+					<div class="historyStat">
+						<div class="historyStatLabel">Positions</div>
+						<div class="historyStatValue" id="history_position_count">0</div>
+					</div>
+				</div>
+
+				<div class="historyColumns">
+					<div class="historyRecentPicker">
+						<div class="historyFlightPickerLabel">Recent Paths</div>
+						<div class="historyChipRow">
+							<button class="historyChip" data-range="off" type="button">Off</button>
+							<button class="historyChip" data-hours="6" type="button">6h</button>
+							<button class="historyChip" data-hours="24" type="button">24h</button>
+							<button class="historyChip" data-days="7" type="button">7d</button>
+							<button class="historyChip" data-days="30" type="button">30d</button>
+						</div>
+					</div>
+					<div class="historyFlightPicker">
+						<div class="historyFlightPickerLabel">Flight Selection</div>
+						<select id="history_flight_select" class="aircraftFilterInput historyFlightSelect">
+							<option value="">Select an aircraft first</option>
+						</select>
+						<div id="history_flight_hint" class="historyFlightHint">Pick an aircraft from the list below. Its most recent saved flight will load automatically.</div>
+					</div>
+					<section class="historySection">
+						<h2 class="historySectionTitle">Aircraft</h2>
+						<ul id="history_aircraft_list" class="historyList"></ul>
+					</section>
+				</div>
+			</section>
+
+			<section class="historyMapCard">
+				<div class="historyMapMeta">
+					<div class="historyMapMetaInner">
+						<div class="historyMapCopy">
+							<div class="historyMapTitle" id="history_map_title">Select a flight</div>
+							<div class="historyMapBody" id="history_map_body">Choose an aircraft on the left, then pick one of its saved flights to draw the path your receiver captured.</div>
+						</div>
+						<div id="history_thumbnail_card" class="historyThumbCard hidden">
+							<button id="history_thumbnail_button" class="historyThumbButton" type="button">
+								<img id="history_thumbnail_image" class="historyThumbImage" alt="">
+								<div id="history_thumbnail_title" class="historyThumbTitle"></div>
+								<div id="history_thumbnail_caption" class="historyThumbCaption"></div>
+							</button>
+						</div>
+					</div>
+				</div>
+				<div id="history_map"></div>
+			</section>
+		</div>
+
+		<div id="history_thumbnail_modal" class="aircraftThumbnailModal hidden" aria-hidden="true">
+			<div class="aircraftThumbnailModalInner">
+				<button id="history_thumbnail_modal_close" class="aircraftThumbnailModalClose" type="button">Close</button>
+				<img id="history_thumbnail_modal_image" class="aircraftThumbnailModalImage" alt="">
+				<div class="aircraftThumbnailModalMeta">
+					<div id="history_thumbnail_modal_title" class="aircraftThumbnailModalTitle"></div>
+					<div id="history_thumbnail_modal_caption" class="aircraftThumbnailModalCaption"></div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			(function() {
+				var servicePort = "8766";
+				var cacheServicePort = "8765";
+				var historyApiBase = (window.MODERN_HISTORY_API_BASE || "").replace(/\/+$/, "");
+				var imageCacheApiBase = (window.MODERN_IMAGE_CACHE_API_BASE || "").replace(/\/+$/, "");
+				var selectedIcao = null;
+				var selectedFlightId = null;
+				var selectedFlights = [];
+				var recentMode = { kind: "off", value: 0 };
+				var autoCache = {};
+				var cachePending = {};
+				var indexLoaded = false;
+				var map;
+				var pathSource;
+				var pathLayer;
+				var typeAssets = {
+					B739: { asset: "assets/aircraft/types/B739.jpg", title: "Boeing 737-900 reference", caption: "United Airlines Boeing 737-900. Photo by Quinti9, CC BY-SA 4.0." },
+					B772: { asset: "assets/aircraft/types/B772.jpg", title: "Boeing 777-200 reference", caption: "Delta Boeing 777-200. Public domain photo by Skyguy414." },
+					B738: { asset: "assets/aircraft/types/B738.jpg", title: "Boeing 737-800 reference", caption: "Delta Air Lines Boeing 737-800. Photo by Pylon757, CC BY 2.0." },
+					B38M: { asset: "assets/aircraft/types/B38M.jpg", title: "Boeing 737 MAX 8 reference", caption: "WestJet Boeing 737 MAX 8. Photo by Acefitt, CC BY-SA." },
+					A320: { asset: "assets/aircraft/types/A320.jpg", title: "Airbus A320 reference", caption: "Condor Airbus A320 at Frankfurt Airport. Public domain photo by Dmitry A. Mottl." },
+					A321: { asset: "assets/aircraft/types/A321.jpg", title: "Airbus A321 reference", caption: "Thai VietJet Air Airbus A321. Photo by AKS.9955, CC BY-SA 4.0." },
+					E175: { asset: "assets/aircraft/types/E175.jpg", title: "Embraer E175 reference", caption: "KLM Cityhopper Embraer E175. Photo by AndrewDawes, CC BY-SA 4.0." },
+					CRJ9: { asset: "assets/aircraft/types/CRJ9.jpg", title: "Canadair Regional Jet CRJ-900 reference", caption: "Canadair Regional Jet CRJ-900. Source photo by Icelechi, CC BY-SA 4.0." },
+					C208: { asset: "assets/aircraft/types/C208.jpg", title: "Cessna 208 Caravan reference", caption: "Cessna 208 Caravan Amphibian. Photo by Rudolf Schider, public domain." },
+					PC12: { asset: "assets/aircraft/types/PC12.jpg", title: "Pilatus PC-12 reference", caption: "Pilatus PC-12. Photo by Bzuk, public domain." }
+				};
+				var typeAliases = {
+					B37M: "B738",
+					A21N: "A321",
+					E75L: "E175",
+					E75S: "E175",
+					CL65: "CRJ9"
+				};
+
+				function buildServiceUrls(path, configuredBase, port) {
+					var urls = [];
+					urls.push((window.location.protocol || "http:") + "//" + (window.location.hostname || "piaware.local") + ":" + port + path);
+					if (configuredBase) {
+						urls.push(configuredBase + path);
+					}
+					return urls;
+				}
+
+				function fetchJsonWithFallback(urls) {
+					var remaining = (urls || []).slice();
+
+					function attempt() {
+						if (!remaining.length) {
+							return Promise.reject(new Error("all fetch attempts failed"));
+						}
+
+						return fetch(remaining.shift())
+							.then(function(response) {
+								if (!response.ok) {
+									throw new Error("request failed");
+								}
+								return response.json();
+							})
+							.catch(function() {
+								return attempt();
+							});
+					}
+
+					return attempt();
+				}
+
+				function apiUrls(path) {
+					return buildServiceUrls(path, historyApiBase, servicePort);
+				}
+
+				function imageCacheUrls(type) {
+					return buildServiceUrls("/resolve?type=" + encodeURIComponent(type), imageCacheApiBase, cacheServicePort);
+				}
+
+				function fmtTs(ts) {
+					if (!ts) return "n/a";
+					return new Date(ts * 1000).toLocaleString();
+				}
+
+				function setText(id, value) {
+					var node = document.getElementById(id);
+					if (node) {
+						node.textContent = value || "";
+					}
+				}
+
+				function normalizeType(typeCode) {
+					if (!typeCode) {
+						return null;
+					}
+					var normalized = String(typeCode).trim().toUpperCase();
+					return typeAliases[normalized] || normalized;
+				}
+
+				function resolveTypeAsset(typeCode) {
+					var normalized = normalizeType(typeCode);
+					if (!normalized) {
+						return null;
+					}
+					return {
+						type: normalized,
+						asset: typeAssets[normalized] || autoCache[normalized] || null
+					};
+				}
+
+				function loadAutoCacheIndex() {
+					return fetch("assets/aircraft/types/index.json", { cache: "no-cache" })
+						.then(function(response) {
+							if (!response.ok) {
+								throw new Error("index fetch failed");
+							}
+							return response.json();
+						})
+						.then(function(payload) {
+							autoCache = payload || {};
+							indexLoaded = true;
+						})
+						.catch(function() {
+							indexLoaded = true;
+						});
+				}
+
+				function requestTypeImage(typeCode) {
+					if (!typeCode || cachePending[typeCode]) {
+						return;
+					}
+					cachePending[typeCode] = true;
+					fetchJsonWithFallback(imageCacheUrls(typeCode))
+						.then(function(payload) {
+							if (payload && payload.status === "ready" && payload.asset) {
+								autoCache[typeCode] = {
+									asset: payload.asset,
+									title: payload.title,
+									caption: payload.caption
+								};
+								if (selectedFlightId) {
+									updateHistoryThumbnail({ aircraft_type: typeCode });
+								}
+							}
+						})
+						.catch(function() {
+							return null;
+						})
+						.finally(function() {
+							cachePending[typeCode] = false;
+						});
+				}
+
+				function hideHistoryThumbnail() {
+					var card = document.getElementById("history_thumbnail_card");
+					if (card) {
+						card.classList.add("hidden");
+					}
+				}
+
+				function updateHistoryThumbnail(flight) {
+					var card = document.getElementById("history_thumbnail_card");
+					var image = document.getElementById("history_thumbnail_image");
+					var modalImage = document.getElementById("history_thumbnail_modal_image");
+					if (!card || !image || !modalImage) {
+						return;
+					}
+
+					var resolved = resolveTypeAsset(flight && flight.aircraft_type);
+					if (!flight || !resolved || !resolved.asset) {
+						hideHistoryThumbnail();
+						if (flight && flight.aircraft_type && indexLoaded) {
+							requestTypeImage(normalizeType(flight.aircraft_type));
+						}
+						return;
+					}
+
+					image.src = resolved.asset.asset;
+					image.alt = resolved.asset.title;
+					modalImage.src = resolved.asset.asset;
+					modalImage.alt = resolved.asset.title;
+					setText("history_thumbnail_title", resolved.asset.title);
+					setText("history_thumbnail_caption", resolved.asset.caption);
+					setText("history_thumbnail_modal_title", resolved.asset.title);
+					setText("history_thumbnail_modal_caption", resolved.asset.caption);
+					card.classList.remove("hidden");
+				}
+
+				function showHistoryThumbnailModal() {
+					var modal = document.getElementById("history_thumbnail_modal");
+					if (!modal) return;
+					modal.classList.remove("hidden");
+					modal.setAttribute("aria-hidden", "false");
+				}
+
+				function hideHistoryThumbnailModal() {
+					var modal = document.getElementById("history_thumbnail_modal");
+					if (!modal) return;
+					modal.classList.add("hidden");
+					modal.setAttribute("aria-hidden", "true");
+				}
+
+				function setClock() {
+					var node = document.getElementById("clock_div");
+					if (node) {
+						node.textContent = new Date().toLocaleString();
+					}
+				}
+
+				function initMap() {
+					pathSource = new ol.source.Vector();
+					pathLayer = new ol.layer.Vector({
+						source: pathSource,
+						style: function(feature) {
+							var isRecent = feature.get("recentOverlay");
+							return new ol.style.Style({
+								stroke: new ol.style.Stroke({
+									color: isRecent ? "rgba(120, 227, 255, 0.35)" : "#4dc5ff",
+									width: isRecent ? 2 : 4
+								}),
+								image: new ol.style.Circle({
+									radius: isRecent ? 2 : 4,
+									fill: new ol.style.Fill({ color: isRecent ? "rgba(120, 227, 255, 0.45)" : "#78e3ff" }),
+									stroke: new ol.style.Stroke({ color: "#08111a", width: 2 })
+								})
+							});
+						}
+					});
+
+					map = new ol.Map({
+						target: "history_map",
+						layers: [
+							new ol.layer.Tile({
+								source: new ol.source.OSM({
+									url: "https://{a-z}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"
+								})
+							}),
+							pathLayer
+						],
+						view: new ol.View({
+							center: ol.proj.fromLonLat([-72.9, 41.6]),
+							zoom: 6
+						}),
+						controls: [new ol.control.Zoom(), new ol.control.Attribution({ collapsed: true })]
+					});
+
+					map.on("pointermove", function(event) {
+						var hit = map.hasFeatureAtPixel(event.pixel, { layerFilter: function(layer) { return layer === pathLayer; } });
+						map.getTargetElement().style.cursor = hit ? "pointer" : "";
+					});
+
+					map.on("click", function(event) {
+						var feature = map.forEachFeatureAtPixel(
+							event.pixel,
+							function(candidate) { return candidate; },
+							{ layerFilter: function(layer) { return layer === pathLayer; } }
+						);
+						if (!feature) {
+							return;
+						}
+						var flightId = feature.get("flight_id");
+						var icao = feature.get("icao");
+						if (!flightId || !icao) {
+							return;
+						}
+						selectFlightFromMap(Number(flightId), String(icao));
+					});
+				}
+
+				function updateSummary() {
+					return fetchJsonWithFallback(apiUrls("/api/history/summary"))
+						.then(function(payload) {
+							document.getElementById("history_aircraft_count").textContent = (payload.aircraft_count || 0).toLocaleString();
+							document.getElementById("history_flight_count").textContent = (payload.flight_count || 0).toLocaleString();
+							document.getElementById("history_position_count").textContent = (payload.position_count || 0).toLocaleString();
+						});
+				}
+
+				function renderAircraft(items) {
+					var list = document.getElementById("history_aircraft_list");
+					list.innerHTML = "";
+
+					items.forEach(function(item) {
+						var li = document.createElement("li");
+						li.className = "historyItem" + (selectedIcao === item.icao ? " active" : "");
+						li.innerHTML = '<div class="historyItemTitle">' + item.icao + (item.registration ? ' · ' + item.registration : '') + '</div>'
+							+ '<div class="historyItemMeta">' + (item.aircraft_type || 'Unknown type') + ' · '
+							+ (item.flight_count || 0) + ' flights · last seen ' + fmtTs(item.last_seen_ts) + '</div>';
+						li.addEventListener("click", function() {
+							selectedIcao = item.icao;
+							selectedFlightId = null;
+							loadAircraft();
+							loadFlights(item.icao);
+						});
+						list.appendChild(li);
+					});
+				}
+
+				function flightLabel(item) {
+					return (item.callsign || item.icao)
+						+ " · "
+						+ fmtTs(item.start_ts)
+						+ " · "
+						+ (item.position_count || 0)
+						+ " pts";
+				}
+
+				function renderFlightOptions(items) {
+					var select = document.getElementById("history_flight_select");
+					var hint = document.getElementById("history_flight_hint");
+					selectedFlights = items || [];
+					select.innerHTML = "";
+
+					if (!selectedIcao) {
+						select.innerHTML = '<option value="">Select an aircraft first</option>';
+						hint.textContent = "Pick an aircraft from the list below. Its most recent saved flight will load automatically.";
+						return;
+					}
+
+					if (!selectedFlights.length) {
+						select.innerHTML = '<option value="">No saved flights</option>';
+						hint.textContent = "This aircraft has not accumulated any stored flight tracks yet.";
+						return;
+					}
+
+					selectedFlights.forEach(function(item) {
+						var option = document.createElement("option");
+						option.value = String(item.id);
+						option.textContent = flightLabel(item);
+						if (selectedFlightId === item.id) {
+							option.selected = true;
+						}
+						select.appendChild(option);
+					});
+
+					hint.textContent = "Showing " + selectedFlights.length + " saved flights for " + selectedIcao + ". Use the dropdown to switch between them.";
+				}
+
+				function loadAircraft() {
+					var search = document.getElementById("history_search").value.trim();
+					return fetchJsonWithFallback(apiUrls("/api/history/aircraft?limit=250&search=" + encodeURIComponent(search)))
+						.then(function(payload) {
+							renderAircraft(payload.aircraft || []);
+						});
+				}
+
+				function loadFlights(icao) {
+					return fetchJsonWithFallback(apiUrls("/api/history/flights?icao=" + encodeURIComponent(icao)))
+						.then(function(payload) {
+							var flights = payload.flights || [];
+							if (flights.length) {
+								if (!selectedFlightId || !flights.some(function(item) { return item.id === selectedFlightId; })) {
+									selectedFlightId = flights[0].id;
+								}
+							} else {
+								selectedFlightId = null;
+							}
+							renderFlightOptions(flights);
+							if (selectedFlightId) {
+								return loadFlightPath(selectedFlightId);
+							}
+							pathSource.clear();
+							document.getElementById("history_map_title").textContent = selectedIcao + " · No saved path";
+							document.getElementById("history_map_body").textContent = "This aircraft does not have any stored position points yet.";
+							hideHistoryThumbnail();
+						});
+				}
+
+				function selectFlightFromMap(flightId, icao) {
+					selectedIcao = icao;
+					selectedFlightId = flightId;
+					recentMode = { kind: "off", value: 0 };
+					renderRecentModeButtons();
+					loadAircraft();
+					loadFlights(icao);
+				}
+
+				function loadFlightPath(flightId) {
+					return fetchJsonWithFallback(apiUrls("/api/history/flight/" + flightId + "/path"))
+						.then(function(payload) {
+							pathSource.clear();
+							if (!payload.geojson || !payload.geojson.geometry || !payload.geojson.geometry.coordinates.length) {
+								document.getElementById("history_map_title").textContent = "No saved path";
+								document.getElementById("history_map_body").textContent = "This flight does not have any stored position points yet.";
+								return;
+							}
+
+							var feature = new ol.format.GeoJSON().readFeature(payload.geojson, {
+								featureProjection: "EPSG:3857"
+							});
+							feature.set("recentOverlay", false);
+							pathSource.addFeature(feature);
+							map.getView().fit(feature.getGeometry().getExtent(), {
+								padding: [80, 80, 80, 80],
+								maxZoom: 12
+							});
+
+							var flight = payload.flight || {};
+							document.getElementById("history_map_title").textContent = (flight.callsign || flight.icao || "Flight") + " · " + (flight.aircraft_type || "Unknown type");
+							document.getElementById("history_map_body").textContent =
+								"Seen " + fmtTs(flight.start_ts) + " to " + fmtTs(flight.end_ts || flight.last_seen_ts)
+								+ " · " + (payload.positions ? payload.positions.length : 0) + " saved position points.";
+							updateHistoryThumbnail(flight);
+						});
+				}
+
+				function renderRecentModeButtons() {
+					Array.prototype.forEach.call(document.querySelectorAll(".historyChip"), function(button) {
+						var isActive = false;
+						if (recentMode.kind === "off" && button.dataset.range === "off") {
+							isActive = true;
+						} else if (recentMode.kind === "hours" && String(recentMode.value) === button.dataset.hours) {
+							isActive = true;
+						} else if (recentMode.kind === "days" && String(recentMode.value) === button.dataset.days) {
+							isActive = true;
+						}
+						button.classList.toggle("active", isActive);
+					});
+				}
+
+				function loadRecentPaths() {
+					if (recentMode.kind === "off") {
+						if (selectedFlightId) {
+							return loadFlightPath(selectedFlightId);
+						}
+						pathSource.clear();
+						return Promise.resolve();
+					}
+
+					var query = recentMode.kind === "days"
+						? "/api/history/recent-paths?days=" + recentMode.value
+						: "/api/history/recent-paths?hours=" + recentMode.value;
+
+					return fetchJsonWithFallback(apiUrls(query))
+						.then(function(payload) {
+							pathSource.clear();
+							var collection = payload.geojson || { type: "FeatureCollection", features: [] };
+							var features = new ol.format.GeoJSON().readFeatures(collection, {
+								featureProjection: "EPSG:3857"
+							});
+							features.forEach(function(feature) {
+								feature.set("recentOverlay", true);
+								pathSource.addFeature(feature);
+							});
+
+							if (features.length) {
+								var extent = pathSource.getExtent();
+								map.getView().fit(extent, { padding: [80, 80, 80, 80], maxZoom: 10 });
+							}
+
+							var label = recentMode.kind === "days" ? recentMode.value + " day" + (recentMode.value === 1 ? "" : "s") : recentMode.value + " hour" + (recentMode.value === 1 ? "" : "s");
+							document.getElementById("history_map_title").textContent = "Recent paths · last " + label;
+							document.getElementById("history_map_body").textContent = "Showing " + (collection.features ? collection.features.length : 0) + " saved flight paths seen by this receiver in the selected time window.";
+							hideHistoryThumbnail();
+						});
+				}
+
+				function refreshAll() {
+					updateSummary();
+					loadAircraft();
+					if (selectedIcao && recentMode.kind === "off") {
+						loadFlights(selectedIcao);
+					}
+					if (recentMode.kind !== "off") {
+						loadRecentPaths();
+					} else if (selectedFlightId) {
+						loadFlightPath(selectedFlightId);
+					}
+				}
+
+					document.addEventListener("DOMContentLoaded", function() {
+					initMap();
+					setClock();
+					window.setInterval(setClock, 500);
+					document.getElementById("history_refresh").addEventListener("click", refreshAll);
+					document.getElementById("history_thumbnail_button").addEventListener("click", showHistoryThumbnailModal);
+					document.getElementById("history_thumbnail_modal_close").addEventListener("click", hideHistoryThumbnailModal);
+					document.getElementById("history_thumbnail_modal").addEventListener("click", function(event) {
+						if (event.target === document.getElementById("history_thumbnail_modal")) {
+							hideHistoryThumbnailModal();
+						}
+					});
+					document.addEventListener("keydown", function(event) {
+						if (event.key === "Escape") {
+							hideHistoryThumbnailModal();
+						}
+					});
+					document.getElementById("history_flight_select").addEventListener("change", function(event) {
+						var flightId = Number(event.target.value);
+						if (!flightId) {
+							return;
+						}
+						selectedFlightId = flightId;
+						recentMode = { kind: "off", value: 0 };
+						renderRecentModeButtons();
+						loadFlightPath(flightId);
+					});
+					Array.prototype.forEach.call(document.querySelectorAll(".historyChip"), function(button) {
+						button.addEventListener("click", function() {
+							if (button.dataset.range === "off") {
+								recentMode = { kind: "off", value: 0 };
+							} else if (button.dataset.hours) {
+								recentMode = { kind: "hours", value: Number(button.dataset.hours) };
+							} else if (button.dataset.days) {
+								recentMode = { kind: "days", value: Number(button.dataset.days) };
+							}
+							renderRecentModeButtons();
+							loadRecentPaths();
+						});
+					});
+					document.getElementById("history_search").addEventListener("keydown", function(event) {
+						if (event.key === "Enter") {
+							refreshAll();
+						}
+					});
+					loadAutoCacheIndex();
+					renderRecentModeButtons();
+					refreshAll();
+				});
+			})();
+		</script>
+	</body>
+</html>

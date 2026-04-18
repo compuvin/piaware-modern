@@ -1,0 +1,255 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#09131d" />
+		<link rel="stylesheet" href="jquery/jquery-ui-1.11.4-smoothness.css" />
+		<link rel="icon" href="favicon.ico" />
+		<link rel="stylesheet" type="text/css" href="modern-ui.css?v=1.1" />
+		<script src="jquery/jquery-3.0.0.min.js"></script>
+		<script>
+			window.MODERN_HISTORY_API_BASE = "/history-api";
+		</script>
+		<title>PiAware SkyAware History Stats</title>
+		<style>
+			.statsShell { height: 100%; }
+			.statsLayout {
+				display: grid;
+				grid-template-columns: 1fr;
+				gap: 18px;
+				padding: 18px;
+				box-sizing: border-box;
+			}
+			.statsGrid {
+				display: grid;
+				grid-template-columns: repeat(4, minmax(0, 1fr));
+				gap: 12px;
+			}
+			.statsCard,
+			.statsPanel {
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg);
+				background: var(--bg-elevated);
+				backdrop-filter: blur(18px);
+				box-shadow: var(--shadow);
+			}
+			.statsCard { padding: 14px 16px; }
+			.statsLabel {
+				color: var(--muted);
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+			.statsValue {
+				margin-top: 8px;
+				color: var(--text);
+				font-family: var(--font-display);
+				font-size: 1.5rem;
+				font-weight: 700;
+			}
+			.statsPanels {
+				display: grid;
+				grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+				gap: 18px;
+			}
+			.statsPanel {
+				padding: 16px;
+				overflow: hidden;
+			}
+			.statsPanelTitle {
+				margin: 0 0 12px;
+				color: var(--accent-strong);
+				font-size: 12px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+			.statsTable {
+				width: 100%;
+				border-collapse: collapse;
+				color: var(--text);
+			}
+			.statsTable th,
+			.statsTable td {
+				padding: 10px 8px;
+				border-bottom: 1px solid rgba(255,255,255,0.08);
+				text-align: left;
+				font-size: 13px;
+			}
+			.statsTable th {
+				color: var(--muted);
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+			.statsMeta {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 10px 16px;
+				color: var(--text);
+			}
+			.statsMetaItem { min-width: 0; }
+			.statsMetaKey {
+				color: var(--muted);
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+			.statsMetaVal {
+				margin-top: 4px;
+				word-break: break-word;
+			}
+			@media (max-width: 1000px) {
+				.statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+				.statsPanels { grid-template-columns: 1fr; }
+			}
+			@media (max-width: 640px) {
+				.statsGrid { grid-template-columns: 1fr; }
+				.statsMeta { grid-template-columns: 1fr; }
+			}
+		</style>
+	</head>
+	<body class="modern-shell statsShell">
+		<div id="header" class="infoHeading">
+			<div class="logoContainer">
+				<a href="http://flightaware.com/" target="_blank"><img src="images/fa_logo_color.png" alt="FlightAware" class="flightawareLogo"></a>
+				<div class="modernBrandCopy">
+					<div class="modernEyebrow">History Stats</div>
+					<div class="modernHeadline">Storage and growth metrics for receiver-side history logging.</div>
+				</div>
+			</div>
+			<div class="menuContainer">
+				<div class="dateTime" id="clock_div"></div>
+				<div class="buttonContainer">
+					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
+					<a class="button buttonHeader" href="history.html"><span class="buttonText">History</span></a>
+				</div>
+			</div>
+		</div>
+		<div class="statsLayout">
+			<section class="statsGrid">
+				<div class="statsCard"><div class="statsLabel">Aircraft</div><div class="statsValue" id="stats_aircraft">0</div></div>
+				<div class="statsCard"><div class="statsLabel">Flights</div><div class="statsValue" id="stats_flights">0</div></div>
+				<div class="statsCard"><div class="statsLabel">Positions</div><div class="statsValue" id="stats_positions">0</div></div>
+				<div class="statsCard"><div class="statsLabel">SQLite File</div><div class="statsValue" id="stats_db_size">0 B</div></div>
+			</section>
+			<section class="statsPanels">
+				<div class="statsPanel">
+					<h2 class="statsPanelTitle">Daily Position Growth</h2>
+					<table class="statsTable">
+						<thead><tr><th>Day</th><th>Positions</th></tr></thead>
+						<tbody id="stats_daily_body"></tbody>
+					</table>
+				</div>
+				<div class="statsPanel">
+					<h2 class="statsPanelTitle">Database Details</h2>
+					<div class="statsMeta">
+						<div class="statsMetaItem"><div class="statsMetaKey">DB File</div><div class="statsMetaVal" id="stats_db_file"></div></div>
+						<div class="statsMetaItem"><div class="statsMetaKey">WAL File</div><div class="statsMetaVal" id="stats_wal_file"></div></div>
+						<div class="statsMetaItem"><div class="statsMetaKey">SHM File</div><div class="statsMetaVal" id="stats_shm_file"></div></div>
+						<div class="statsMetaItem"><div class="statsMetaKey">Internal Pages</div><div class="statsMetaVal" id="stats_internal"></div></div>
+						<div class="statsMetaItem"><div class="statsMetaKey">Oldest Position</div><div class="statsMetaVal" id="stats_oldest"></div></div>
+						<div class="statsMetaItem"><div class="statsMetaKey">Newest Position</div><div class="statsMetaVal" id="stats_newest"></div></div>
+					</div>
+				</div>
+			</section>
+			<section class="statsPanel">
+				<h2 class="statsPanelTitle">Busiest Aircraft</h2>
+				<table class="statsTable">
+					<thead><tr><th>Aircraft</th><th>Type</th><th>Flights</th><th>Positions</th></tr></thead>
+					<tbody id="stats_aircraft_body"></tbody>
+				</table>
+			</section>
+		</div>
+		<script>
+			(function() {
+				var port = "8766";
+				var historyApiBase = (window.MODERN_HISTORY_API_BASE || "").replace(/\/+$/, "");
+				function buildServiceUrls(path) {
+					var urls = [];
+					urls.push((window.location.protocol || "http:") + "//" + (window.location.hostname || "piaware.local") + ":" + port + path);
+					if (historyApiBase) {
+						urls.push(historyApiBase + path);
+					}
+					return urls;
+				}
+				function fetchJsonWithFallback(urls) {
+					var remaining = (urls || []).slice();
+					function attempt() {
+						if (!remaining.length) {
+							return Promise.reject(new Error("all fetch attempts failed"));
+						}
+						return fetch(remaining.shift())
+							.then(function(response) {
+								if (!response.ok) {
+									throw new Error("request failed");
+								}
+								return response.json();
+							})
+							.catch(function() {
+								return attempt();
+							});
+					}
+					return attempt();
+				}
+				function fmtTs(ts) {
+					return ts ? new Date(ts * 1000).toLocaleString() : "n/a";
+				}
+				function fmtBytes(bytes) {
+					if (!bytes) return "0 B";
+					var units = ["B", "KB", "MB", "GB"];
+					var i = 0;
+					var value = bytes;
+					while (value >= 1024 && i < units.length - 1) {
+						value /= 1024;
+						i += 1;
+					}
+					return value.toFixed(value >= 10 || i === 0 ? 0 : 1) + " " + units[i];
+				}
+				function setClock() {
+					document.getElementById("clock_div").textContent = new Date().toLocaleString();
+				}
+				function setText(id, value) {
+					document.getElementById(id).textContent = value;
+				}
+				function renderTable(id, rows, htmlBuilder) {
+					var body = document.getElementById(id);
+					body.innerHTML = "";
+					rows.forEach(function(row) {
+						var tr = document.createElement("tr");
+						tr.innerHTML = htmlBuilder(row);
+						body.appendChild(tr);
+					});
+				}
+				function loadStats() {
+					return fetchJsonWithFallback(buildServiceUrls("/api/history/stats"))
+						.then(function(payload) {
+							setText("stats_aircraft", (payload.aircraft_count || 0).toLocaleString());
+							setText("stats_flights", (payload.flight_count || 0).toLocaleString());
+							setText("stats_positions", (payload.position_count || 0).toLocaleString());
+							setText("stats_db_size", fmtBytes(payload.db_size_bytes || 0));
+							setText("stats_db_file", fmtBytes(payload.db_size_bytes || 0));
+							setText("stats_wal_file", fmtBytes(payload.wal_size_bytes || 0));
+							setText("stats_shm_file", fmtBytes(payload.shm_size_bytes || 0));
+							setText("stats_internal", fmtBytes(payload.db_internal_bytes || 0));
+							setText("stats_oldest", fmtTs(payload.oldest_position_ts));
+							setText("stats_newest", fmtTs(payload.newest_position_ts));
+							renderTable("stats_daily_body", payload.positions_per_day || [], function(row) {
+								return "<td>" + row.day + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
+							});
+							renderTable("stats_aircraft_body", payload.busy_aircraft || [], function(row) {
+								var label = row.icao + (row.registration ? " · " + row.registration : "");
+								return "<td>" + label + "</td><td>" + (row.aircraft_type || "n/a") + "</td><td>" + Number(row.flights || 0).toLocaleString() + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
+							});
+						});
+				}
+				document.addEventListener("DOMContentLoaded", function() {
+					setClock();
+					window.setInterval(setClock, 500);
+					loadStats();
+				});
+			})();
+		</script>
+	</body>
+</html>

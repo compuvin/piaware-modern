@@ -1,0 +1,14 @@
+[Unit]
+Description=PiAware Modern Aircraft Image Cache
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_ROOT@/services
+ExecStart=/usr/bin/python3 @PROJECT_ROOT@/services/aircraft_image_cache_server.py --host 0.0.0.0 --port 8765
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

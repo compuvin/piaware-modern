@@ -1,0 +1,14 @@
+[Unit]
+Description=PiAware Modern Flight History Logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_ROOT@/services
+ExecStart=/usr/bin/python3 @PROJECT_ROOT@/services/flight_history_server.py --host 0.0.0.0 --port 8766 --source-url http://127.0.0.1/skyaware/data/aircraft.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
