@@ -9,7 +9,10 @@
 		<link rel="stylesheet" type="text/css" href="modern-ui.css?v=1.1" />
 		<script src="jquery/jquery-3.0.0.min.js"></script>
 		<script>
-			window.MODERN_HISTORY_API_BASE = "/history-api";
+			(function() {
+				window.MODERN_DIRECT_SERVICE_HOST = "piaware.local";
+				window.MODERN_HISTORY_API_BASE = "/history-api";
+			})();
 		</script>
 		<title>PiAware SkyAware History Stats</title>
 		<style>
@@ -125,6 +128,7 @@
 					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
 					<a class="button buttonHeader" href="history.html"><span class="buttonText">History</span></a>
 				</div>
+				<button type="button" class="navToggle" onclick="$('body').toggleClass('navOpen')"><span></span></button>
 			</div>
 		</div>
 		<div class="statsLayout">
@@ -165,14 +169,20 @@
 		<script>
 			(function() {
 				var port = "8766";
-				var historyApiBase = (window.MODERN_HISTORY_API_BASE || "").replace(/\/+$/, "");
+				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
+				var historyApiBases = [window.MODERN_HISTORY_API_BASE || ""];
 				function buildServiceUrls(path) {
 					var urls = [];
-					urls.push((window.location.protocol || "http:") + "//" + (window.location.hostname || "piaware.local") + ":" + port + path);
-					if (historyApiBase) {
-						urls.push(historyApiBase + path);
-					}
-					return urls;
+					urls.push((window.location.protocol || "http:") + "//" + directServiceHost + ":" + port + path);
+					historyApiBases.forEach(function(base) {
+						var trimmed = (base || "").replace(/\/+$/, "");
+						if (trimmed) {
+							urls.push(trimmed + path);
+						}
+					});
+					return urls.filter(function(url, index, arr) {
+						return arr.indexOf(url) === index;
+					});
 				}
 				function fetchJsonWithFallback(urls) {
 					var remaining = (urls || []).slice();

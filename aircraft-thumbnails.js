@@ -3,63 +3,13 @@
 (function() {
     var CACHE_SERVICE_PORT = "8765";
     var CACHE_SERVICE_BASE = (window.MODERN_IMAGE_CACHE_API_BASE || "").replace(/\/+$/, "");
+    var DIRECT_SERVICE_HOST = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
     var AUTO_CACHE = {};
     var PENDING = {};
     var INDEX_STATE = "idle";
     var INDEX_PROMISE = null;
     var INDEX_URL = "assets/aircraft/types/index.json";
-    var TYPE_ASSETS = {
-        B739: {
-            asset: "assets/aircraft/types/B739.jpg",
-            title: "Boeing 737-900 reference",
-            caption: "United Airlines Boeing 737-900. Photo by Quinti9, CC BY-SA 4.0."
-        },
-        B772: {
-            asset: "assets/aircraft/types/B772.jpg",
-            title: "Boeing 777-200 reference",
-            caption: "Delta Boeing 777-200. Public domain photo by Skyguy414."
-        },
-        B738: {
-            asset: "assets/aircraft/types/B738.jpg",
-            title: "Boeing 737-800 reference",
-            caption: "Delta Air Lines Boeing 737-800. Photo by Pylon757, CC BY 2.0."
-        },
-        B38M: {
-            asset: "assets/aircraft/types/B38M.jpg",
-            title: "Boeing 737 MAX 8 reference",
-            caption: "WestJet Boeing 737 MAX 8. Photo by Acefitt, CC BY-SA."
-        },
-        A320: {
-            asset: "assets/aircraft/types/A320.jpg",
-            title: "Airbus A320 reference",
-            caption: "Condor Airbus A320 at Frankfurt Airport. Public domain photo by Dmitry A. Mottl."
-        },
-        A321: {
-            asset: "assets/aircraft/types/A321.jpg",
-            title: "Airbus A321 reference",
-            caption: "Thai VietJet Air Airbus A321. Photo by AKS.9955, CC BY-SA 4.0."
-        },
-        E175: {
-            asset: "assets/aircraft/types/E175.jpg",
-            title: "Embraer E175 reference",
-            caption: "KLM Cityhopper Embraer E175. Photo by AndrewDawes, CC BY-SA 4.0."
-        },
-        CRJ9: {
-            asset: "assets/aircraft/types/CRJ9.jpg",
-            title: "Canadair Regional Jet CRJ-900 reference",
-            caption: "Canadair Regional Jet CRJ-900. Source photo by Icelechi, CC BY-SA 4.0."
-        },
-        C208: {
-            asset: "assets/aircraft/types/C208.jpg",
-            title: "Cessna 208 Caravan reference",
-            caption: "Cessna 208 Caravan Amphibian. Photo by Rudolf Schider, public domain."
-        },
-        PC12: {
-            asset: "assets/aircraft/types/PC12.jpg",
-            title: "Pilatus PC-12 reference",
-            caption: "Pilatus PC-12. Photo by Bzuk, public domain."
-        }
-    };
+    var TYPE_ASSETS = {};
 
     var TYPE_ALIASES = {
         B37M: "B738",
@@ -141,8 +91,7 @@
     function cacheServiceUrls(type) {
         var urls = [];
         var protocol = window.location.protocol || "http:";
-        var hostname = window.location.hostname || "piaware.local";
-        urls.push(protocol + "//" + hostname + ":" + CACHE_SERVICE_PORT + "/resolve?type=" + encodeURIComponent(type));
+        urls.push(protocol + "//" + DIRECT_SERVICE_HOST + ":" + CACHE_SERVICE_PORT + "/resolve?type=" + encodeURIComponent(type));
         if (CACHE_SERVICE_BASE) {
             urls.push(CACHE_SERVICE_BASE + "/resolve?type=" + encodeURIComponent(type));
         }

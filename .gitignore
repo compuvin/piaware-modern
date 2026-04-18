@@ -1,1 +1,5 @@
 .codex
+data/flight_history.sqlite3
+data/flight_history.sqlite3-shm
+data/flight_history.sqlite3-wal
+assets/aircraft/types/

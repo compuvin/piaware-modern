@@ -30,8 +30,11 @@
 		<script type="text/javascript" src="layers.js?v=10.0"></script>
 		<script type="text/javascript" src="script.js?v=10.0"></script>
 		<script>
-			window.MODERN_HISTORY_API_BASE = "/history-api";
-			window.MODERN_IMAGE_CACHE_API_BASE = "/image-cache";
+			(function() {
+				window.MODERN_DIRECT_SERVICE_HOST = "piaware.local";
+				window.MODERN_HISTORY_API_BASE = "/history-api";
+				window.MODERN_IMAGE_CACHE_API_BASE = "/image-cache";
+			})();
 		</script>
 		<script type="text/javascript" src="aircraft-thumbnails.js?v=1.0"></script>
 		<script>
