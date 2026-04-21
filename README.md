@@ -14,6 +14,20 @@ thumbnail flow with the modernized version in this repository.
 - History stats page at `history-stats.html`
 - Local history logger and aircraft image cache services in `services/`
 
+## Screenshots
+
+### Live view
+
+![Live view](assets/screenshots/live-view.png)
+
+### History view
+
+![History view](assets/screenshots/history-view.png)
+
+### History stats
+
+![History stats](assets/screenshots/history-stats.png)
+
 ## Historical view
 
 The history side is what turns this from a prettier live map into something
@@ -96,3 +110,5 @@ This project is derived in part from FlightAware's `dump1090` SkyAware web UI:
 - `https://github.com/flightaware/dump1090`
 
 See `UPSTREAM.md` and `LICENSE` for the current upstream and licensing notes.
+
+[![CodeFactor](https://www.codefactor.io/repository/github/compuvin/piaware-modern/badge/main)](https://www.codefactor.io/repository/github/compuvin/piaware-modern/overview/main)

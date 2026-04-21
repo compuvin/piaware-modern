@@ -425,6 +425,7 @@
 				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
 				var historyApiBases = [window.MODERN_HISTORY_API_BASE || ""];
 				var imageCacheApiBases = [window.MODERN_IMAGE_CACHE_API_BASE || ""];
+				var initialParams = new URLSearchParams(window.location.search || "");
 				var selectedIcao = null;
 				var selectedFlightId = null;
 				var selectedFlights = [];
@@ -432,6 +433,7 @@
 				var autoCache = {};
 				var cachePending = {};
 				var indexLoaded = false;
+				var pendingInitialIcao = (initialParams.get("icao") || "").trim().toUpperCase() || null;
 				var map;
 				var pathSource;
 				var pathLayer;
@@ -750,9 +752,18 @@
 
 				function loadAircraft() {
 					var search = document.getElementById("history_search").value.trim();
+					if (pendingInitialIcao) {
+						selectedIcao = pendingInitialIcao;
+					}
 					return fetchJsonWithFallback(apiUrls("/api/history/aircraft?limit=250&search=" + encodeURIComponent(search)))
 						.then(function(payload) {
-							renderAircraft(payload.aircraft || []);
+							var items = payload.aircraft || [];
+							renderAircraft(items);
+							if (pendingInitialIcao) {
+								selectedIcao = pendingInitialIcao;
+								pendingInitialIcao = null;
+								return loadFlights(selectedIcao);
+							}
 						});
 				}
 
@@ -925,6 +936,9 @@
 							refreshAll();
 						}
 					});
+					if (pendingInitialIcao) {
+						document.getElementById("history_search").value = pendingInitialIcao;
+					}
 					loadAutoCacheIndex();
 					renderRecentModeButtons();
 					refreshAll();

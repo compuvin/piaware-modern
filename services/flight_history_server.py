@@ -543,6 +543,7 @@ class FlightHistoryStore:
         }
 
     def stats(self) -> dict[str, Any]:
+        week_cutoff = int(time.time()) - (7 * 24 * 60 * 60)
         with self.lock:
             aircraft_count = int(self.conn.execute("SELECT COUNT(*) FROM aircraft").fetchone()[0])
             flight_count = int(self.conn.execute("SELECT COUNT(*) FROM flights").fetchone()[0])
@@ -594,6 +595,41 @@ class FlightHistoryStore:
                 """
             ).fetchall()
 
+            unique_week_aircraft = self.conn.execute(
+                """
+                WITH recent_aircraft AS (
+                    SELECT
+                        a.icao,
+                        a.registration,
+                        a.aircraft_type,
+                        a.description,
+                        a.last_seen_ts
+                    FROM aircraft a
+                    WHERE a.last_seen_ts >= ?
+                ),
+                type_totals AS (
+                    SELECT
+                        COALESCE(NULLIF(aircraft_type, ''), 'UNKNOWN') AS type_key,
+                        COUNT(*) AS aircraft_seen
+                    FROM recent_aircraft
+                    GROUP BY COALESCE(NULLIF(aircraft_type, ''), 'UNKNOWN')
+                )
+                SELECT
+                    ra.icao,
+                    ra.registration,
+                    ra.aircraft_type,
+                    ra.description,
+                    ra.last_seen_ts,
+                    tt.aircraft_seen AS type_seen_count
+                FROM recent_aircraft ra
+                JOIN type_totals tt
+                  ON tt.type_key = COALESCE(NULLIF(ra.aircraft_type, ''), 'UNKNOWN')
+                ORDER BY tt.aircraft_seen ASC, ra.last_seen_ts DESC, ra.icao ASC
+                LIMIT 15
+                """,
+                (week_cutoff,),
+            ).fetchall()
+
         wal_path = Path(str(self.db_path) + "-wal")
         shm_path = Path(str(self.db_path) + "-shm")
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
@@ -616,6 +652,7 @@ class FlightHistoryStore:
             "newest_position_ts": newest["newest_position_ts"] if newest else None,
             "positions_per_day": [dict(row) for row in recent_days],
             "busy_aircraft": [dict(row) for row in busy_aircraft],
+            "unique_week_aircraft": [self._enrich_row_metadata(dict(row)) for row in unique_week_aircraft],
         }
 
     def list_aircraft(self, limit: int, search: str | None) -> list[dict[str, Any]]:

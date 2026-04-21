@@ -16,13 +16,26 @@
 		</script>
 		<title>PiAware SkyAware History Stats</title>
 		<style>
-			.statsShell { height: 100%; }
+			html,
+			body {
+				height: auto;
+				min-height: 100dvh;
+				overflow-x: hidden;
+				overflow-y: auto;
+			}
+			.statsShell {
+				height: auto;
+				min-height: 100dvh;
+				overflow-x: hidden;
+				overflow-y: auto;
+			}
 			.statsLayout {
 				display: grid;
 				grid-template-columns: 1fr;
 				gap: 18px;
 				padding: 18px;
 				box-sizing: border-box;
+				min-height: calc(100dvh - var(--header-h));
 			}
 			.statsGrid {
 				display: grid;
@@ -56,6 +69,11 @@
 				grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 				gap: 18px;
 			}
+			.statsWidePanels {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 18px;
+			}
 			.statsPanel {
 				padding: 16px;
 				overflow: hidden;
@@ -86,6 +104,14 @@
 				text-transform: uppercase;
 				letter-spacing: 0.08em;
 			}
+			.statsTable a {
+				color: var(--accent);
+				text-decoration: none;
+			}
+			.statsTable a:hover {
+				color: var(--text);
+				text-decoration: underline;
+			}
 			.statsMeta {
 				display: grid;
 				grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -106,6 +132,7 @@
 			@media (max-width: 1000px) {
 				.statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 				.statsPanels { grid-template-columns: 1fr; }
+				.statsWidePanels { grid-template-columns: 1fr; }
 			}
 			@media (max-width: 640px) {
 				.statsGrid { grid-template-columns: 1fr; }
@@ -164,6 +191,15 @@
 					<thead><tr><th>Aircraft</th><th>Type</th><th>Flights</th><th>Positions</th></tr></thead>
 					<tbody id="stats_aircraft_body"></tbody>
 				</table>
+			</section>
+			<section class="statsWidePanels">
+				<div class="statsPanel">
+					<h2 class="statsPanelTitle">Most Unique Aircraft · Last 7 Days</h2>
+					<table class="statsTable">
+						<thead><tr><th>Aircraft</th><th>Type</th><th>Seen This Type</th><th>Last Seen</th></tr></thead>
+						<tbody id="stats_unique_week_body"></tbody>
+					</table>
+				</div>
 			</section>
 		</div>
 		<script>
@@ -232,6 +268,13 @@
 						body.appendChild(tr);
 					});
 				}
+				function historyAircraftUrl(icao) {
+					return "history.html?icao=" + encodeURIComponent(icao || "");
+				}
+				function aircraftLink(row) {
+					var label = row.icao + (row.registration ? " · " + row.registration : "");
+					return '<a href="' + historyAircraftUrl(row.icao) + '">' + label + '</a>';
+				}
 				function loadStats() {
 					return fetchJsonWithFallback(buildServiceUrls("/api/history/stats"))
 						.then(function(payload) {
@@ -249,8 +292,11 @@
 								return "<td>" + row.day + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
 							});
 							renderTable("stats_aircraft_body", payload.busy_aircraft || [], function(row) {
-								var label = row.icao + (row.registration ? " · " + row.registration : "");
-								return "<td>" + label + "</td><td>" + (row.aircraft_type || "n/a") + "</td><td>" + Number(row.flights || 0).toLocaleString() + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
+								return "<td>" + aircraftLink(row) + "</td><td>" + (row.aircraft_type || "n/a") + "</td><td>" + Number(row.flights || 0).toLocaleString() + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
+							});
+							renderTable("stats_unique_week_body", payload.unique_week_aircraft || [], function(row) {
+								var typeLabel = row.aircraft_type || row.description || "Unknown type";
+								return "<td>" + aircraftLink(row) + "</td><td>" + typeLabel + "</td><td>" + Number(row.type_seen_count || 0).toLocaleString() + "</td><td>" + fmtTs(row.last_seen_ts) + "</td>";
 							});
 						});
 				}
