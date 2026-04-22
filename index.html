@@ -110,6 +110,41 @@
 				});
 			});
 		</script>
+		<script>
+			(function() {
+				var resizeTimers = [];
+
+				function flushResizeTimers() {
+					while (resizeTimers.length) {
+						clearTimeout(resizeTimers.pop());
+					}
+				}
+
+				function scheduleModernMapResize() {
+					flushResizeTimers();
+					[0, 120, 320, 700].forEach(function(delay) {
+						resizeTimers.push(setTimeout(function() {
+							if (typeof updateMapSize === "function" && typeof OLMap !== "undefined" && OLMap) {
+								updateMapSize();
+							}
+						}, delay));
+					});
+				}
+
+				window.addEventListener("load", scheduleModernMapResize);
+				window.addEventListener("resize", scheduleModernMapResize);
+				window.addEventListener("orientationchange", scheduleModernMapResize);
+				window.addEventListener("pageshow", scheduleModernMapResize);
+				if (window.visualViewport) {
+					window.visualViewport.addEventListener("resize", scheduleModernMapResize);
+				}
+				document.addEventListener("visibilitychange", function() {
+					if (!document.hidden) {
+						scheduleModernMapResize();
+					}
+				});
+			})();
+		</script>
 		<title>PiAware SkyAware</title>
 	</head>
 

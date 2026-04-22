@@ -54,7 +54,7 @@
 
 			.historySearch {
 				display: grid;
-				grid-template-columns: 1fr auto;
+				grid-template-columns: 1fr auto auto;
 				gap: 10px;
 				margin-bottom: 14px;
 			}
@@ -343,7 +343,8 @@
 		<div class="historyLayout">
 			<section class="historyPanel">
 				<div class="historySearch">
-					<input id="history_search" class="aircraftFilterInput" type="text" placeholder="Search">
+					<input id="history_search" class="aircraftFilterInput" type="search" placeholder="Search" enterkeyhint="search">
+					<button id="history_search_button" class="button buttonHeader" type="button"><span class="buttonText">Search</span></button>
 					<button id="history_refresh" class="button buttonHeader" type="button"><span class="buttonText">Refresh</span></button>
 				</div>
 
@@ -441,7 +442,6 @@
 				var typeAliases = {
 					B37M: "B738",
 					A21N: "A321",
-					E75L: "E175",
 					E75S: "E175",
 					CL65: "CRJ9"
 				};
@@ -891,10 +891,19 @@
 					}
 				}
 
+				function runSearch() {
+					selectedIcao = null;
+					selectedFlightId = null;
+					selectedFlights = [];
+					renderFlightOptions([]);
+					refreshAll();
+				}
+
 					document.addEventListener("DOMContentLoaded", function() {
 					initMap();
 					setClock();
 					window.setInterval(setClock, 500);
+					document.getElementById("history_search_button").addEventListener("click", runSearch);
 					document.getElementById("history_refresh").addEventListener("click", refreshAll);
 					document.getElementById("history_thumbnail_button").addEventListener("click", showHistoryThumbnailModal);
 					document.getElementById("history_thumbnail_modal_close").addEventListener("click", hideHistoryThumbnailModal);
@@ -933,7 +942,7 @@
 					});
 					document.getElementById("history_search").addEventListener("keydown", function(event) {
 						if (event.key === "Enter") {
-							refreshAll();
+							runSearch();
 						}
 					});
 					if (pendingInitialIcao) {

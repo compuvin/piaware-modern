@@ -14,7 +14,6 @@
     var TYPE_ALIASES = {
         B37M: "B738",
         A21N: "A321",
-        E75L: "E175",
         E75S: "E175",
         CL65: "CRJ9"
     };

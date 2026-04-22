@@ -26,6 +26,7 @@ DEFAULT_SOURCE_URL = "http://127.0.0.1/skyaware/data/aircraft.json"
 DEFAULT_SOURCE_URL_978 = ""
 AIRCRAFT_DB_DIR = PROJECT_ROOT / "db"
 AIRCRAFT_TYPE_DB_PATH = AIRCRAFT_DB_DIR / "aircraft_types" / "icao_aircraft_types.json"
+AIRCRAFT_IMAGE_CACHE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 USER_AGENT = "piaware-modern-flight-history/1.0"
 
 
@@ -635,6 +636,11 @@ class FlightHistoryStore:
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
         wal_size = wal_path.stat().st_size if wal_path.exists() else 0
         shm_size = shm_path.stat().st_size if shm_path.exists() else 0
+        image_cache_size = 0
+        if AIRCRAFT_IMAGE_CACHE_DIR.exists():
+            image_cache_size = sum(
+                path.stat().st_size for path in AIRCRAFT_IMAGE_CACHE_DIR.rglob("*") if path.is_file()
+            )
 
         return {
             "aircraft_count": aircraft_count,
@@ -644,6 +650,7 @@ class FlightHistoryStore:
             "wal_size_bytes": wal_size,
             "shm_size_bytes": shm_size,
             "db_internal_bytes": pages * page_size,
+            "image_cache_size_bytes": image_cache_size,
             "oldest_aircraft_ts": oldest["oldest_aircraft_ts"] if oldest else None,
             "oldest_flight_ts": oldest["oldest_flight_ts"] if oldest else None,
             "oldest_position_ts": oldest["oldest_position_ts"] if oldest else None,

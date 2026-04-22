@@ -39,7 +39,7 @@
 			}
 			.statsGrid {
 				display: grid;
-				grid-template-columns: repeat(4, minmax(0, 1fr));
+				grid-template-columns: repeat(5, minmax(0, 1fr));
 				gap: 12px;
 			}
 			.statsCard,
@@ -164,6 +164,7 @@
 				<div class="statsCard"><div class="statsLabel">Flights</div><div class="statsValue" id="stats_flights">0</div></div>
 				<div class="statsCard"><div class="statsLabel">Positions</div><div class="statsValue" id="stats_positions">0</div></div>
 				<div class="statsCard"><div class="statsLabel">SQLite File</div><div class="statsValue" id="stats_db_size">0 B</div></div>
+				<div class="statsCard"><div class="statsLabel">Image Cache</div><div class="statsValue" id="stats_image_cache">0 B</div></div>
 			</section>
 			<section class="statsPanels">
 				<div class="statsPanel">
@@ -188,7 +189,7 @@
 			<section class="statsPanel">
 				<h2 class="statsPanelTitle">Busiest Aircraft</h2>
 				<table class="statsTable">
-					<thead><tr><th>Aircraft</th><th>Type</th><th>Flights</th><th>Positions</th></tr></thead>
+					<thead><tr><th>Aircraft</th><th>Name</th><th>ICAO Type</th><th>Flights</th><th>Positions</th></tr></thead>
 					<tbody id="stats_aircraft_body"></tbody>
 				</table>
 			</section>
@@ -196,7 +197,7 @@
 				<div class="statsPanel">
 					<h2 class="statsPanelTitle">Most Unique Aircraft · Last 7 Days</h2>
 					<table class="statsTable">
-						<thead><tr><th>Aircraft</th><th>Type</th><th>Seen This Type</th><th>Last Seen</th></tr></thead>
+						<thead><tr><th>Aircraft</th><th>Name</th><th>ICAO Type</th><th>Seen This Type</th><th>Last Seen</th></tr></thead>
 						<tbody id="stats_unique_week_body"></tbody>
 					</table>
 				</div>
@@ -207,6 +208,7 @@
 				var port = "8766";
 				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
 				var historyApiBases = [window.MODERN_HISTORY_API_BASE || ""];
+				var typeAssetIndex = {};
 				function buildServiceUrls(path) {
 					var urls = [];
 					urls.push((window.location.protocol || "http:") + "//" + directServiceHost + ":" + port + path);
@@ -275,6 +277,32 @@
 					var label = row.icao + (row.registration ? " · " + row.registration : "");
 					return '<a href="' + historyAircraftUrl(row.icao) + '">' + label + '</a>';
 				}
+				function loadTypeAssetIndex() {
+					return fetch("assets/aircraft/types/index.json", { cache: "no-cache" })
+						.then(function(response) {
+							if (!response.ok) {
+								throw new Error("type index fetch failed");
+							}
+							return response.json();
+						})
+						.then(function(payload) {
+							typeAssetIndex = payload || {};
+						})
+						.catch(function() {
+							typeAssetIndex = {};
+						});
+				}
+				function friendlyTypeName(typeCode, fallbackDescription) {
+					var normalized = (typeCode || "").toString().trim().toUpperCase();
+					if (normalized && typeAssetIndex[normalized] && typeAssetIndex[normalized].title) {
+						return String(typeAssetIndex[normalized].title).replace(/\s+reference$/i, "");
+					}
+					return fallbackDescription || normalized || "Unknown type";
+				}
+				function icaoTypeLabel(typeCode) {
+					var normalized = (typeCode || "").toString().trim().toUpperCase();
+					return normalized || "n/a";
+				}
 				function loadStats() {
 					return fetchJsonWithFallback(buildServiceUrls("/api/history/stats"))
 						.then(function(payload) {
@@ -282,6 +310,7 @@
 							setText("stats_flights", (payload.flight_count || 0).toLocaleString());
 							setText("stats_positions", (payload.position_count || 0).toLocaleString());
 							setText("stats_db_size", fmtBytes(payload.db_size_bytes || 0));
+							setText("stats_image_cache", fmtBytes(payload.image_cache_size_bytes || 0));
 							setText("stats_db_file", fmtBytes(payload.db_size_bytes || 0));
 							setText("stats_wal_file", fmtBytes(payload.wal_size_bytes || 0));
 							setText("stats_shm_file", fmtBytes(payload.shm_size_bytes || 0));
@@ -292,18 +321,17 @@
 								return "<td>" + row.day + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
 							});
 							renderTable("stats_aircraft_body", payload.busy_aircraft || [], function(row) {
-								return "<td>" + aircraftLink(row) + "</td><td>" + (row.aircraft_type || "n/a") + "</td><td>" + Number(row.flights || 0).toLocaleString() + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
+								return "<td>" + aircraftLink(row) + "</td><td>" + friendlyTypeName(row.aircraft_type, row.description) + "</td><td>" + icaoTypeLabel(row.aircraft_type) + "</td><td>" + Number(row.flights || 0).toLocaleString() + "</td><td>" + Number(row.positions || 0).toLocaleString() + "</td>";
 							});
 							renderTable("stats_unique_week_body", payload.unique_week_aircraft || [], function(row) {
-								var typeLabel = row.aircraft_type || row.description || "Unknown type";
-								return "<td>" + aircraftLink(row) + "</td><td>" + typeLabel + "</td><td>" + Number(row.type_seen_count || 0).toLocaleString() + "</td><td>" + fmtTs(row.last_seen_ts) + "</td>";
+								return "<td>" + aircraftLink(row) + "</td><td>" + friendlyTypeName(row.aircraft_type, row.description) + "</td><td>" + icaoTypeLabel(row.aircraft_type) + "</td><td>" + Number(row.type_seen_count || 0).toLocaleString() + "</td><td>" + fmtTs(row.last_seen_ts) + "</td>";
 							});
 						});
 				}
 				document.addEventListener("DOMContentLoaded", function() {
 					setClock();
 					window.setInterval(setClock, 500);
-					loadStats();
+					loadTypeAssetIndex().finally(loadStats);
 				});
 			})();
 		</script>
