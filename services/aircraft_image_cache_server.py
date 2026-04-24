@@ -61,6 +61,56 @@ TYPE_ALIASES = {
     "CL65": "CRJ9",
 }
 
+BAD_TITLE_WORDS = {
+    "AIRPORT",
+    "PARK",
+    "PAGE",
+    "PAGES",
+    "LOGO",
+    "DIAGRAM",
+    "DRAWING",
+    "MAP",
+    "MUSEUM",
+    "POSTER",
+    "BROCHURE",
+    "BADGE",
+    "EMBLEM",
+    "WIKIPEDIA",
+    "SKYLINE",
+    "CITY",
+    "STATION",
+    "BUILDING",
+    "MONUMENT",
+    "SCULPTURE",
+}
+
+AIRCRAFT_HINT_WORDS = {
+    "AIRCRAFT",
+    "AIRPLANE",
+    "AEROPLANE",
+    "AVIATION",
+    "BOEING",
+    "AIRBUS",
+    "CESSNA",
+    "PIPER",
+    "BEECHCRAFT",
+    "BOMBARDIER",
+    "EMBRAER",
+    "GULFSTREAM",
+    "DIAMOND",
+    "CIRRUS",
+    "PILATUS",
+    "SOCATA",
+    "LEONARDO",
+    "AGUSTAWESTLAND",
+    "DASSAULT",
+    "GRUMMAN",
+    "NORTHAMERICAN",
+    "LOCKHEED",
+    "MCDONNELL",
+    "DOUGLAS",
+}
+
 
 def normalize_type(type_code: str) -> str:
     cleaned = re.sub(r"[^A-Z0-9]", "", type_code.upper())
@@ -116,26 +166,77 @@ def guess_search_term(type_code: str) -> str:
     return type_code
 
 
+def search_queries(type_code: str) -> list[str]:
+    term = guess_search_term(type_code)
+    queries = [f'"{term}" aircraft', f'"{term}" airplane', f'"{term}" aviation', f'"{term}"']
+    if term == type_code:
+        queries.extend([f'"{type_code}" aircraft', f'"{type_code}" airplane'])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        if query not in seen:
+            deduped.append(query)
+            seen.add(query)
+    return deduped
+
+
+def score_result(term: str, title: str) -> int:
+    normalized_term = re.sub(r"[^A-Z0-9]", "", term.upper())
+    normalized_title = re.sub(r"[^A-Z0-9]", "", title.upper())
+    title_words = set(re.findall(r"[A-Z0-9]+", title.upper()))
+    score = 0
+
+    if normalized_term and normalized_term in normalized_title:
+        score += 30
+    if any(word in title_words for word in AIRCRAFT_HINT_WORDS):
+        score += 15
+    if "FILE:" in title.upper():
+        score += 2
+    if any(word in title_words for word in BAD_TITLE_WORDS):
+        score -= 40
+    if re.search(r"\b(ICAO|IATA|LOGO|MAP|PAGE|PARK)\b", title.upper()):
+        score -= 20
+    return score
+
+
+def is_plausible_aircraft_result(title: str) -> bool:
+    title_words = set(re.findall(r"[A-Z0-9]+", title.upper()))
+    if any(word in title_words for word in BAD_TITLE_WORDS):
+        return False
+    return True
+
+
 def search_commons_file(type_code: str) -> str | None:
     term = guess_search_term(type_code)
-    params = {
-        "action": "query",
-        "format": "json",
-        "list": "search",
-        "srnamespace": "6",
-        "srlimit": "8",
-        "srsearch": f'"{term}"',
-    }
-    data = fetch_json(f"{COMMONS_API}?{urlencode(params)}")
-    results = data.get("query", {}).get("search", [])
-    wanted = re.sub(r"[^A-Z0-9]", "", term.upper())
+    best_title: str | None = None
+    best_score = -10_000
 
-    for result in results:
-        title = result.get("title", "")
-        normalized_title = re.sub(r"[^A-Z0-9]", "", title.upper())
-        if wanted and wanted in normalized_title:
-            return title
-    return results[0]["title"] if results else None
+    for query in search_queries(type_code):
+        params = {
+            "action": "query",
+            "format": "json",
+            "list": "search",
+            "srnamespace": "6",
+            "srlimit": "8",
+            "srsearch": query,
+        }
+        data = fetch_json(f"{COMMONS_API}?{urlencode(params)}")
+        results = data.get("query", {}).get("search", [])
+
+        for result in results:
+            title = result.get("title", "")
+            if not title or not is_plausible_aircraft_result(title):
+                continue
+            score = score_result(term, title)
+            if score > best_score:
+                best_title = title
+                best_score = score
+
+        if best_title and best_score >= 30:
+            return best_title
+
+    return best_title
 
 
 def get_commons_image_info(file_title: str) -> dict[str, Any] | None:
@@ -173,7 +274,7 @@ def resolve_type(type_code: str) -> dict[str, Any]:
         index = load_index()
         existing = index.get(type_code)
         if existing:
-            asset_path = ROOT / existing["asset"]
+            asset_path = PROJECT_ROOT / existing["asset"]
             if asset_path.exists():
                 log(f"[cache] hit for {type_code}: {existing['asset']}")
                 return {"status": "ready", **existing}
