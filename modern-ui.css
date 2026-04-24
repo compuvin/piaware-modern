@@ -44,6 +44,7 @@ div#loader {
     top: 50%;
     left: 50%;
     margin: -64px 0 0 -64px;
+    filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
 }
 
 #loader_progress {
@@ -393,6 +394,7 @@ label.sourceCheckboxChecked div.sourceCheckbox {
     .menuContainer .navToggle:before,
     .menuContainer .navToggle:after {
         top: calc(50% - 2px);
+        transition-delay: 0.15s;
     }
 
     .menuContainer .navToggle span:before {
@@ -401,11 +403,6 @@ label.sourceCheckboxChecked div.sourceCheckbox {
 
     .menuContainer .navToggle span:after {
         bottom: 3px;
-    }
-
-    .menuContainer .navToggle:before,
-    .menuContainer .navToggle:after {
-        transition-delay: 0.15s;
     }
 
     .navOpen .menuContainer .navToggle:before,
@@ -1529,10 +1526,6 @@ div#uat_update_error {
 #loader {
     background: rgba(4, 9, 15, 0.78) !important;
     backdrop-filter: blur(10px);
-}
-
-#spinny {
-    filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
 }
 
 .aircraftThumbnailModal {
