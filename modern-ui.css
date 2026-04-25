@@ -28,6 +28,12 @@ body {
     height: 100%;
     min-height: 100%;
     overflow: hidden;
+    background:
+        radial-gradient(circle at top left, rgba(77, 197, 255, 0.18), transparent 26%),
+        radial-gradient(circle at top right, rgba(255, 180, 84, 0.14), transparent 24%),
+        linear-gradient(180deg, #0b1622 0%, #08111a 48%, #060d15 100%);
+    color: var(--text);
+    font-family: var(--font-ui);
 }
 
 div#loader {
@@ -162,8 +168,10 @@ div#loader {
 #filter_panel,
 #column_select_panel {
     position: relative;
-    padding: 8px 10px 12px;
-    margin-bottom: 8px;
+    padding: 16px;
+    margin-bottom: 14px;
+    background: rgba(11, 22, 35, 0.82);
+    color: var(--text);
 }
 
 .aircraftFilterInput {
@@ -323,10 +331,10 @@ label.sourceCheckboxChecked div.sourceCheckbox {
     text-transform: uppercase;
     text-decoration: none;
     cursor: pointer;
-    padding: 6px 10px;
+    padding: 0;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(9, 18, 29, 0.92);
+    border: 0;
+    background: transparent;
     color: var(--accent-strong);
     z-index: 4;
 }
@@ -479,16 +487,6 @@ label.sourceCheckboxChecked div.sourceCheckbox {
         visibility: visible;
         pointer-events: auto;
     }
-}
-
-html,
-body {
-    background:
-        radial-gradient(circle at top left, rgba(77, 197, 255, 0.18), transparent 26%),
-        radial-gradient(circle at top right, rgba(255, 180, 84, 0.14), transparent 24%),
-        linear-gradient(180deg, #0b1622 0%, #08111a 48%, #060d15 100%);
-    color: var(--text);
-    font-family: var(--font-ui);
 }
 
 body.modern-shell {
@@ -1003,14 +1001,6 @@ dd {
     padding: 10px 14px;
 }
 
-#filter_panel,
-#column_select_panel {
-    padding: 16px;
-    margin-bottom: 14px;
-    background: rgba(11, 22, 35, 0.82);
-    color: var(--text);
-}
-
 #settings_infoblock .settingsText,
 #settings_infoblock .infoBlockTitleText,
 #settings_infoblock label,
@@ -1290,19 +1280,6 @@ dd {
     text-transform: uppercase;
 }
 
-#close-button {
-    top: 14px;
-    right: 18px;
-    color: var(--accent-strong);
-    background: transparent;
-    border: 0;
-    padding: 0;
-    text-decoration: none;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
 #splitter,
 #splitter-infoblock {
     opacity: 0.55;
@@ -1387,16 +1364,10 @@ dd {
 .ol-zoom .ol-zoom-in,
 .ol-zoom .ol-zoom-out,
 .ol-rotate-reset {
-    color: var(--text) !important;
-    font-size: 20px !important;
-    font-weight: 700 !important;
-}
-
-.ol-zoom .ol-zoom-in,
-.ol-zoom .ol-zoom-out,
-.ol-rotate-reset {
     position: relative;
     color: transparent !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
 }
 
 #history_map .ol-zoom {
