@@ -17,6 +17,8 @@ var FollowSelected = false;
 var infoBoxOriginalPosition = {};
 var customAltitudeColors = true;
 var myAdsbStatsSiteUrl = null;
+var highlightedInfoBlockOriginalParent = null;
+var highlightedInfoBlockOriginalNextSibling = null;
 
 var ADSB_Enabled = true;
 var UAT_Enabled = false;
@@ -374,11 +376,23 @@ function initialize() {
         $("#aircraft_ident_filter_form").submit(onFilterByAircraftIdent);
         $("#aircraft_ident_filter_reset_button").click(onResetAircraftIdentFilter);
 
-        $('#settingsCog').on('click', function() {
+        document.addEventListener('fullscreenchange', function() {
+            if (document.fullscreenElement === document.getElementById('map_container')) {
+                moveHighlightedInfoBlockIntoMap();
+            } else {
+                restoreHighlightedInfoBlockParent();
+            }
+            updateFullscreenToggleLabel();
+            window.setTimeout(updateMapSize, 50);
+        });
+        updateFullscreenToggleLabel();
+
+        $('.settingsContainer').on('click', function() {
         	$('#settings_infoblock').toggle();
         });
 
-        $('#settings_close').on('click', function() {
+        $('#settings_close').on('click', function(event) {
+            event.stopPropagation();
             $('#settings_infoblock').hide();
         });
 
@@ -796,69 +810,9 @@ function applyUrlQueryStrings() {
         resetMap();
     }
 
-    if (params.get('banner') === 'hide') {
-        hideBanner();
-    }
-    if (params.get('altitudeChart') === 'hide') {
-	$('#altitude_checkbox').removeClass('settingsCheckboxChecked');
-        $('#altitude_chart').hide();
-    }
-    if (params.get('altitudeChart') === 'show') {
-        $('#altitude_checkbox').addClass('settingsCheckboxChecked');
-        $('#altitude_chart').show();
-    }
-    if (params.get('aircraftTrails') === 'show') {
-        selectAllPlanes();
-    }
-    if (params.get('aircraftTrails') === 'hide') {
-        deselectAllPlanes();
-    }
-    if (params.get('map') === 'show') {
-        showMap();
-    }
-    if (params.get('map') === 'hide') {
-        expandSidebar();
-    }
-    if (params.get('sidebar') === 'show') {
-        $("#sidebar_container").show();
-        updateMapSize();
-    }
-    if (params.get('sidebar') === 'hide') {
-        $("#sidebar_container").hide();
-        updateMapSize();
-    }
-    if (params.get('zoomOut')) {
-        zoomMap(params.get('zoomOut'), true);
-    }
-    if (params.get('zoomIn')) {
-        zoomMap(params.get('zoomIn'), false);
-    }
-    if (params.get('moveNorth')) {
-        moveMap(params.get('moveNorth'), true, false);
-    }
-    if (params.get('moveSouth')) {
-        moveMap(params.get('moveSouth'), true, true);
-    }
-    if (params.get('moveEast')) {
-        moveMap(params.get('moveEast'), false, false);
-    }
-    if (params.get('moveWest')) {
-        moveMap(params.get('moveWest'), false, true);
-    }
-    if (params.get('displayUnits')) {
-        setDisplayUnits(params.get('displayUnits'));
-    }
-    if (params.get('rangeRings')) {
-        setRangeRingVisibility(params.get('rangeRings'));
-    }
-    if (params.get('ringCount')) {
-        setRingCount(params.get('ringCount'));
-    }
-    if (params.get('ringBaseDistance')) {
-        setRingBaseDistance(params.get('ringBaseDistance'));
-    }
-    if (params.get('ringInterval')) {
-        setRingInterval(params.get('ringInterval'));
+    var handlers = getUrlParamHandlers(params);
+    for (var option in handlers) {
+        handlers[option]();
     }
 }
 
@@ -1304,110 +1258,81 @@ function refreshPageTitle() {
         document.title = '(' + aircraftCount + ') ' + PageName + rate;
 }
 
-// Refresh the detail window about the plane
-function refreshSelected() {
-        updateMessageRates();
-        refreshPageTitle();
+function setTextOrDefault(selector, value, fallback) {
+        $(selector).text(value !== null && value !== "" ? value : fallback);
+}
 
-        var selected = false;
-        if (typeof SelectedPlane !== 'undefined' && SelectedPlane != "ICAO" && SelectedPlane != null) {
-                selected = Planes[SelectedPlane];
+function setNumericTextOrDefault(selector, value, formatter, fallback) {
+        if (value == null) {
+                $(selector).text(fallback);
+        } else {
+                $(selector).text(formatter(value));
         }
-        
+}
+
+function formatSeenText(seen) {
+        if (seen <= 1) {
+                return 'now';
+        }
+
+        return seen.toFixed(1) + 's';
+}
+
+function getSelectedDataSourceLabel(plane) {
+        var datasource = plane.getDataSource();
+        if (datasource === "uat") {
+                return "UAT";
+        } else if (datasource === "adsb_icao") {
+                return "ADS-B";
+        } else if (datasource === "tisb_trackfile" || datasource === "tisb_icao" || datasource === "tisb_other") {
+                return "TIS-B";
+        } else if (datasource === "mlat") {
+                return "MLAT";
+        }
+
+        return "Other";
+}
+
+function updateOverviewInfo() {
         $('#dump1090_infoblock').css('display','block');
         $('#skyaware_version').text('SkyAware ' + SkyAwareVersion);
         $('#dump1090_total_ac').text(TrackedAircraft);
         $('#dump1090_total_ac_positions').text(TrackedAircraftPositions);
         $('#dump1090_total_history').text(TrackedHistorySize);
         $('#active_filter_count').text(ActiveFilterCount);
+}
 
-        if (ADSB_Enabled) {
-                $('#adsb_datasource_checkbox, #adsb_datasource_label').show();
-                $('#adsb_message_rate_row').show();
-                if (MessageRate !== null) {
-                        $('#dump1090_message_rate').text(MessageRate.toFixed(1) + '/sec');
+function updateDataSourceVisibility(enabled, checkboxSelector, rateRowSelector, rateSelector, rateValue) {
+        if (enabled) {
+                $(checkboxSelector).show();
+                $(rateRowSelector).show();
+                if (rateValue !== null) {
+                        $(rateSelector).text(rateValue.toFixed(1) + '/sec');
                 }
-        } else {
-                $('#adsb_datasource_checkbox, #adsb_datasource_label').hide();
-                $('#adsb_message_rate_row').hide();
-        }
-
-        if (UAT_Enabled) {
-		$('#uat_datasource_checkbox, #uat_datasource_label').show();
-                $('#uat_message_rate_row').show();
-                if (UatMessageRate !== null) {
-                        $('#uat_message_rate').text(UatMessageRate.toFixed(1) + '/sec');
-                }
-        } else {
-		$('#uat_datasource_checkbox, #uat_datasource_label').hide();
-                $('#uat_message_rate_row').hide();
-        }
-
-        setSelectedInfoBlockVisibility();
-
-        if (!selected) {
                 return;
         }
-      
-        if (selected.flight !== null && selected.flight !== "") {
-                $('#selected_callsign').text(selected.flight);
-        } else {
-                $('#selected_callsign').text('n/a');
-        }
+
+        $(checkboxSelector).hide();
+        $(rateRowSelector).hide();
+}
+
+function updateSelectedPlaneIdentity(selected) {
+        setTextOrDefault('#selected_callsign', selected.flight, 'n/a');
         $('#selected_flightaware_link').html(getFlightAwareModeSLink(selected.icao, selected.flight, "Visit Flight Page"));
-
-        if (selected.registration !== null) {
-                $('#selected_registration').text(selected.registration);
-        } else {
-                $('#selected_registration').text("n/a");
-        }
-
-        if (selected.icaotype !== null) {
-                $('#selected_icaotype').text(selected.icaotype);
-        } else {
-                $('#selected_icaotype').text("n/a");
-        }
-
-        // Not using this logic for the redesigned info panel at the time, but leaving it in  if/when adding it back
-        // var emerg = document.getElementById('selected_emergency');
-        // if (selected.squawk in SpecialSquawks) {
-        //         emerg.className = SpecialSquawks[selected.squawk].cssClass;
-        //         emerg.textContent = NBSP + 'Squawking: ' + SpecialSquawks[selected.squawk].text + NBSP ;
-        // } else {
-        //         emerg.className = 'hidden';
-        // }
-
-        $("#selected_altitude").text(format_altitude_long(selected.altitude, selected.vert_rate, DisplayUnits));
-        $('#selected_onground').text(format_onground(selected.altitude));
-
-        if (selected.squawk === null || selected.squawk === '0000') {
-                $('#selected_squawk').text('n/a');
-        } else {
-                $('#selected_squawk').text(selected.squawk);
-        }
-
-        $('#selected_speed').text(format_speed_long(selected.gs, DisplayUnits));
-        $('#selected_ias').text(format_speed_long(selected.ias, DisplayUnits));
-        $('#selected_tas').text(format_speed_long(selected.tas, DisplayUnits));
-        $('#selected_vertical_rate').text(format_vert_rate_long(selected.baro_rate, DisplayUnits));
-        $('#selected_vertical_rate_geo').text(format_vert_rate_long(selected.geom_rate, DisplayUnits));
+        setTextOrDefault('#selected_registration', selected.registration, 'n/a');
+        setTextOrDefault('#selected_icaotype', selected.icaotype, 'n/a');
         $('#selected_icao').text(selected.icao.toUpperCase());
-        $('#airframes_post_icao').attr('value',selected.icao);
+        $('#airframes_post_icao').attr('value', selected.icao);
+        $('#selected_country').text(selected.icaorange.country);
+        $('#selected_category').text(selected.category ? selected.category : "n/a");
+        $('#selected_photo_link').html(getFlightAwarePhotoLink(selected.registration));
+}
+
+function updateSelectedPlanePosition(selected) {
+        $('#selected_seen').text(formatSeenText(selected.seen));
+        $('#selected_seen_pos').text(formatSeenText(selected.seen_pos));
         $('#selected_track').text(format_track_long(selected.track));
 
-        if (selected.seen <= 1) {
-                $('#selected_seen').text('now');
-        } else {
-                $('#selected_seen').text(selected.seen.toFixed(1) + 's');
-        }
-
-        if (selected.seen_pos <= 1) {
-               $('#selected_seen_pos').text('now');
-        } else {
-               $('#selected_seen_pos').text(selected.seen_pos.toFixed(1) + 's');
-        }
-
-        $('#selected_country').text(selected.icaorange.country);
         if (ShowFlags && selected.icaorange.flag_image !== null) {
                 $('#selected_flag').removeClass('hidden');
                 $('#selected_flag img').attr('src', FlagPath + selected.icaorange.flag_image);
@@ -1419,81 +1344,42 @@ function refreshSelected() {
         if (selected.position === null) {
                 $('#selected_position').text('n/a');
                 $('#selected_follow').addClass('hidden');
-        } else {
-                $('#selected_position').text(format_latlng(selected.position));
-                $('#position_age').text(selected.seen_pos.toFixed(1) + 's');
-                $('#selected_follow').removeClass('hidden');
-                if (FollowSelected) {
-                        $('#selected_follow').css('font-weight', 'bold');
-                        OLMap.getView().setCenter(ol.proj.fromLonLat(selected.position));
-                } else {
-                        $('#selected_follow').css('font-weight', 'normal');
-                }
+                return;
         }
 
-        var datasource = selected.getDataSource();
-        if (datasource === "uat") {
-                $('#selected_source').text("UAT");
-        } else if (datasource === "adsb_icao") {
-                $('#selected_source').text("ADS-B");
-        } else if (datasource === "tisb_trackfile" || datasource === "tisb_icao" || datasource === "tisb_other") {
-                $('#selected_source').text("TIS-B");
-        } else if (datasource === "mlat") {
-                $('#selected_source').text("MLAT");
-        } else {
-                $('#selected_source').text("Other");
-        }
+        $('#selected_position').text(format_latlng(selected.position));
+        $('#position_age').text(selected.seen_pos.toFixed(1) + 's');
+        $('#selected_follow').removeClass('hidden');
 
-        $('#selected_category').text(selected.category ? selected.category : "n/a");
-        $('#selected_sitedist').text(format_distance_long(selected.sitedist, DisplayUnits));
-        $('#selected_rssi').text(selected.rssi.toFixed(1) + ' dBFS');
-        $('#selected_message_count').text(selected.messages);
-        $('#selected_photo_link').html(getFlightAwarePhotoLink(selected.registration));
+        if (FollowSelected) {
+                $('#selected_follow').css('font-weight', 'bold');
+                OLMap.getView().setCenter(ol.proj.fromLonLat(selected.position));
+        } else {
+                $('#selected_follow').css('font-weight', 'normal');
+        }
+}
+
+function updateSelectedPlanePerformance(selected) {
+        $("#selected_altitude").text(format_altitude_long(selected.altitude, selected.vert_rate, DisplayUnits));
+        $('#selected_onground').text(format_onground(selected.altitude));
+        $('#selected_speed').text(format_speed_long(selected.gs, DisplayUnits));
+        $('#selected_ias').text(format_speed_long(selected.ias, DisplayUnits));
+        $('#selected_tas').text(format_speed_long(selected.tas, DisplayUnits));
+        $('#selected_vertical_rate').text(format_vert_rate_long(selected.baro_rate, DisplayUnits));
+        $('#selected_vertical_rate_geo').text(format_vert_rate_long(selected.geom_rate, DisplayUnits));
         $('#selected_altitude_geom').text(format_altitude_long(selected.alt_geom, selected.geom_rate, DisplayUnits));
         $('#selected_mag_heading').text(format_track_long(selected.mag_heading));
         $('#selected_true_heading').text(format_track_long(selected.true_heading));
-        $('#selected_ias').text(format_speed_long(selected.ias, DisplayUnits));
-        $('#selected_tas').text(format_speed_long(selected.tas, DisplayUnits));
-        if (selected.mach == null) {
-                $('#selected_mach').text('n/a');
-        } else {
-                $('#selected_mach').text(selected.mach.toFixed(3));
-        }
-        if (selected.roll == null) {
-                $('#selected_roll').text('n/a');
-        } else {
-                $('#selected_roll').text(selected.roll.toFixed(1));
-        }
-        if (selected.track_rate == null) {
-                $('#selected_trackrate').text('n/a');
-        } else {
-                $('#selected_trackrate').text(selected.track_rate.toFixed(2));
-        }
         $('#selected_geom_rate').text(format_vert_rate_long(selected.geom_rate, DisplayUnits));
-        if (selected.nav_qnh == null) {
-                $('#selected_nav_qnh').text("n/a");
-        } else {
-                $('#selected_nav_qnh').text(selected.nav_qnh.toFixed(1) + " hPa");
-        }
-        $('#selected_nav_altitude').text(format_altitude_long(selected.nav_altitude, 0, DisplayUnits));
-        $('#selected_nav_heading').text(format_track_long(selected.nav_heading));
-        if (selected.nav_modes == null) {
-                $('#selected_nav_modes').text("n/a");
-        } else {
-                $('#selected_nav_modes').text(selected.nav_modes.join());
-        }
-        if (selected.nic_baro == null) {
-                $('#selected_nic_baro').text("n/a");
-        } else {
-                if (selected.nic_baro == 1) {
-                        $('#selected_nic_baro').text("cross-checked");
-                } else {
-                        $('#selected_nic_baro').text("not cross-checked");
-                }
-        }
+        $('#selected_sitedist').text(format_distance_long(selected.sitedist, DisplayUnits));
+        $('#selected_rssi').text(selected.rssi.toFixed(1) + ' dBFS');
+        $('#selected_message_count').text(selected.messages);
+}
 
+function updateSelectedPlanePrecision(selected) {
         $('#selected_nac_p').text(format_nac_p(selected.nac_p));
         $('#selected_nac_v').text(format_nac_v(selected.nac_v));
+
         if (selected.rc == null) {
                 $('#selected_rc').text("n/a");
         } else if (selected.rc == 0) {
@@ -1504,37 +1390,60 @@ function refreshSelected() {
 
         if (selected.sil == null || selected.sil_type == null) {
                 $('#selected_sil').text("n/a");
-        } else {
-                var sampleRate = "";
-                var silDesc = "";
-                if (selected.sil_type == "perhour") {
-                        sampleRate = " per flight hour";
-                } else if (selected.sil_type == "persample") {
-                        sampleRate = " per sample";
-                }
-
-                switch (selected.sil) {
-                        case 0:
-                                silDesc = "&gt; 1×10<sup>-3</sup>";
-                                break;
-                        case 1:
-                                silDesc = "≤ 1×10<sup>-3</sup>";
-                                break;
-                        case 2:
-                                silDesc = "≤ 1×10<sup>-5</sup>";
-                                break;
-                        case 3:
-                                silDesc = "≤ 1×10<sup>-7</sup>";
-                                break;
-                        default:
-                                silDesc = "n/a";
-                                sampleRate = "";
-                                break;
-                }
-
-                $('#selected_sil').html(silDesc + sampleRate);
+                return;
         }
 
+        var sampleRate = "";
+        var silDesc = "";
+        if (selected.sil_type == "perhour") {
+                sampleRate = " per flight hour";
+        } else if (selected.sil_type == "persample") {
+                sampleRate = " per sample";
+        }
+
+        switch (selected.sil) {
+                case 0:
+                        silDesc = "&gt; 1×10<sup>-3</sup>";
+                        break;
+                case 1:
+                        silDesc = "≤ 1×10<sup>-3</sup>";
+                        break;
+                case 2:
+                        silDesc = "≤ 1×10<sup>-5</sup>";
+                        break;
+                case 3:
+                        silDesc = "≤ 1×10<sup>-7</sup>";
+                        break;
+                default:
+                        silDesc = "n/a";
+                        sampleRate = "";
+                        break;
+        }
+
+        $('#selected_sil').html(silDesc + sampleRate);
+}
+
+function updateSelectedPlaneNavigation(selected) {
+        if (selected.nav_qnh == null) {
+                $('#selected_nav_qnh').text("n/a");
+        } else {
+                $('#selected_nav_qnh').text(selected.nav_qnh.toFixed(1) + " hPa");
+        }
+
+        $('#selected_nav_altitude').text(format_altitude_long(selected.nav_altitude, 0, DisplayUnits));
+        $('#selected_nav_heading').text(format_track_long(selected.nav_heading));
+        $('#selected_nav_modes').text(selected.nav_modes == null ? "n/a" : selected.nav_modes.join());
+
+        if (selected.nic_baro == null) {
+                $('#selected_nic_baro').text("n/a");
+        } else if (selected.nic_baro == 1) {
+                $('#selected_nic_baro').text("cross-checked");
+        } else {
+                $('#selected_nic_baro').text("not cross-checked");
+        }
+}
+
+function updateSelectedPlaneVersions(selected) {
         if (selected.version == null) {
                 $('#selected_version').text('N/A');
         } else if (selected.version == 0) {
@@ -1558,6 +1467,52 @@ function refreshSelected() {
         } else {
                 $('#selected_uat_version').text('v' + selected.uat_version);
         }
+}
+
+function updateSelectedPlaneStatus(selected) {
+        $('#selected_squawk').text((selected.squawk === null || selected.squawk === '0000') ? 'n/a' : selected.squawk);
+        $('#selected_source').text(getSelectedDataSourceLabel(selected));
+        setNumericTextOrDefault('#selected_mach', selected.mach, function(value) { return value.toFixed(3); }, 'n/a');
+        setNumericTextOrDefault('#selected_roll', selected.roll, function(value) { return value.toFixed(1); }, 'n/a');
+        setNumericTextOrDefault('#selected_trackrate', selected.track_rate, function(value) { return value.toFixed(2); }, 'n/a');
+}
+
+// Refresh the detail window about the plane
+function refreshSelected() {
+        updateMessageRates();
+        refreshPageTitle();
+
+        var selected = false;
+        if (typeof SelectedPlane !== 'undefined' && SelectedPlane != "ICAO" && SelectedPlane != null) {
+                selected = Planes[SelectedPlane];
+        }
+        
+        updateOverviewInfo();
+        updateDataSourceVisibility(ADSB_Enabled, '#adsb_datasource_checkbox, #adsb_datasource_label', '#adsb_message_rate_row', '#dump1090_message_rate', MessageRate);
+        updateDataSourceVisibility(UAT_Enabled, '#uat_datasource_checkbox, #uat_datasource_label', '#uat_message_rate_row', '#uat_message_rate', UatMessageRate);
+
+        setSelectedInfoBlockVisibility();
+
+        if (!selected) {
+                return;
+        }
+
+        // Not using this logic for the redesigned info panel at the time, but leaving it in  if/when adding it back
+        // var emerg = document.getElementById('selected_emergency');
+        // if (selected.squawk in SpecialSquawks) {
+        //         emerg.className = SpecialSquawks[selected.squawk].cssClass;
+        //         emerg.textContent = NBSP + 'Squawking: ' + SpecialSquawks[selected.squawk].text + NBSP ;
+        // } else {
+        //         emerg.className = 'hidden';
+        // }
+
+        updateSelectedPlaneIdentity(selected);
+        updateSelectedPlanePerformance(selected);
+        updateSelectedPlanePosition(selected);
+        updateSelectedPlaneStatus(selected);
+        updateSelectedPlaneNavigation(selected);
+        updateSelectedPlanePrecision(selected);
+        updateSelectedPlaneVersions(selected);
 
 }
 
@@ -1583,6 +1538,199 @@ function updateMessageRates () {
         }
 }
 
+function getUrlParamHandlers(params) {
+	return {
+		banner: function() {
+			if (params.get('banner') === 'hide') {
+				hideBanner();
+			}
+		},
+		altitudeChart: function() {
+			if (params.get('altitudeChart') === 'hide') {
+				$('#altitude_checkbox').removeClass('settingsCheckboxChecked');
+				$('#altitude_chart').hide();
+			}
+			if (params.get('altitudeChart') === 'show') {
+				$('#altitude_checkbox').addClass('settingsCheckboxChecked');
+				$('#altitude_chart').show();
+			}
+		},
+		aircraftTrails: function() {
+			if (params.get('aircraftTrails') === 'show') {
+				selectAllPlanes();
+			}
+			if (params.get('aircraftTrails') === 'hide') {
+				deselectAllPlanes();
+			}
+		},
+		map: function() {
+			if (params.get('map') === 'show') {
+				showMap();
+			}
+			if (params.get('map') === 'hide') {
+				expandSidebar();
+			}
+		},
+		sidebar: function() {
+			if (params.get('sidebar') === 'show') {
+				$("#sidebar_container").show();
+				updateMapSize();
+			}
+			if (params.get('sidebar') === 'hide') {
+				$("#sidebar_container").hide();
+				updateMapSize();
+			}
+		},
+		zoomOut: function() {
+			if (params.get('zoomOut')) {
+				zoomMap(params.get('zoomOut'), true);
+			}
+		},
+		zoomIn: function() {
+			if (params.get('zoomIn')) {
+				zoomMap(params.get('zoomIn'), false);
+			}
+		},
+		moveNorth: function() {
+			if (params.get('moveNorth')) {
+				moveMap(params.get('moveNorth'), true, false);
+			}
+		},
+		moveSouth: function() {
+			if (params.get('moveSouth')) {
+				moveMap(params.get('moveSouth'), true, true);
+			}
+		},
+		moveEast: function() {
+			if (params.get('moveEast')) {
+				moveMap(params.get('moveEast'), false, false);
+			}
+		},
+		moveWest: function() {
+			if (params.get('moveWest')) {
+				moveMap(params.get('moveWest'), false, true);
+			}
+		},
+		displayUnits: function() {
+			if (params.get('displayUnits')) {
+				setDisplayUnits(params.get('displayUnits'));
+			}
+		},
+		rangeRings: function() {
+			if (params.get('rangeRings')) {
+				setRangeRingVisibility(params.get('rangeRings'));
+			}
+		},
+		ringCount: function() {
+			if (params.get('ringCount')) {
+				setRingCount(params.get('ringCount'));
+			}
+		},
+		ringBaseDistance: function() {
+			if (params.get('ringBaseDistance')) {
+				setRingBaseDistance(params.get('ringBaseDistance'));
+			}
+		},
+		ringInterval: function() {
+			if (params.get('ringInterval')) {
+				setRingInterval(params.get('ringInterval'));
+			}
+		}
+	};
+}
+
+function getMapInfoBoxPosition(infoBox, markerPosition, mapCanvas) {
+	var x = markerPosition[0] + 20;
+	var y = markerPosition[1] + 60;
+	var w = infoBox.outerWidth() + 20;
+	var h = infoBox.outerHeight();
+
+	if (x > mapCanvas.width() - w) {
+		x -= w + 20;
+	}
+	if (y > mapCanvas.height() - h) {
+		y -= h;
+	}
+
+	return { left: x, top: y };
+}
+
+function updateHighlightedIdentity(highlighted) {
+	setTextOrDefault('#highlighted_callsign', highlighted.flight, 'n/a');
+	setTextOrDefault('#higlighted_icaotype', highlighted.icaotype, 'n/a');
+	setTextOrDefault('#highlighted_registration', highlighted.registration, 'n/a');
+	$('#highlighted_icao').text(highlighted.icao.toUpperCase());
+}
+
+function updateHighlightedMetrics(highlighted) {
+	$('#highlighted_source').text(getSelectedDataSourceLabel(highlighted));
+	$('#highlighted_speed').text(format_speed_long(highlighted.speed, DisplayUnits));
+	$("#highlighted_altitude").text(format_altitude_long(highlighted.altitude, highlighted.vert_rate, DisplayUnits));
+}
+
+function getTablePlaneClasses(tableplane) {
+	var classes = "plane_table_row";
+	var datasource = tableplane.getDataSource();
+
+	if (datasource === "uat") {
+		classes += " uat";
+	} else if (datasource === "adsb_icao") {
+		classes += " vPosition";
+	} else if (datasource === "tisb_trackfile" || datasource === "tisb_icao" || datasource === "tisb_other") {
+		classes += " tisb";
+	} else if (datasource === "mlat") {
+		classes += " mlat";
+	} else {
+		classes += " other";
+	}
+
+	if (tableplane.icao == SelectedPlane) {
+		classes += " selected";
+	}
+
+	if (tableplane.squawk in SpecialSquawks) {
+		classes += " " + SpecialSquawks[tableplane.squawk].cssClass;
+	}
+
+	return classes;
+}
+
+function updateTablePlaneIdentityCell(tableplane) {
+	if (tableplane.flight) {
+		tableplane.tr.cells[2].innerHTML = getFlightAwareModeSLink(tableplane.icao, tableplane.flight, tableplane.flight);
+		tableplane.tr.cells[2].className = "ident_normal";
+	} else if (tableplane.registration !== null) {
+		tableplane.tr.cells[2].innerHTML = getFlightAwareIdentLink(tableplane.registration, tableplane.registration);
+		tableplane.tr.cells[2].className = "ident_fallback";
+	} else {
+		tableplane.tr.cells[2].innerHTML = "";
+		tableplane.tr.cells[2].className = "";
+	}
+}
+
+function updateTablePlaneRow(tableplane, classes) {
+	updateTablePlaneIdentityCell(tableplane);
+
+	tableplane.tr.cells[3].textContent = (tableplane.registration !== null ? tableplane.registration : "");
+	tableplane.tr.cells[4].textContent = (tableplane.icaotype !== null ? tableplane.icaotype : "");
+	tableplane.tr.cells[5].textContent = (tableplane.squawk !== null ? tableplane.squawk : "");
+	tableplane.tr.cells[6].innerHTML = format_altitude_brief(tableplane.altitude, tableplane.vert_rate, DisplayUnits);
+	tableplane.tr.cells[7].textContent = format_speed_brief(tableplane.gs, DisplayUnits);
+	tableplane.tr.cells[8].textContent = format_vert_rate_brief(tableplane.vert_rate, DisplayUnits);
+	tableplane.tr.cells[9].textContent = format_distance_brief(tableplane.sitedist, DisplayUnits);
+	tableplane.tr.cells[10].textContent = format_track_brief(tableplane.track);
+	tableplane.tr.cells[11].textContent = tableplane.messages;
+	tableplane.tr.cells[12].textContent = tableplane.seen.toFixed(0);
+	tableplane.tr.cells[13].textContent = (tableplane.rssi !== null ? tableplane.rssi : "");
+	tableplane.tr.cells[14].textContent = (tableplane.position !== null ? tableplane.position[1].toFixed(4) : "");
+	tableplane.tr.cells[15].textContent = (tableplane.position !== null ? tableplane.position[0].toFixed(4) : "");
+	tableplane.tr.cells[16].textContent = format_data_source(tableplane.getDataSource());
+	tableplane.tr.cells[17].innerHTML = getAirframesModeSLink(tableplane.icao);
+	tableplane.tr.cells[18].innerHTML = getFlightAwareModeSLink(tableplane.icao, tableplane.flight);
+	tableplane.tr.cells[19].innerHTML = getFlightAwarePhotoLink(tableplane.registration);
+	tableplane.tr.className = classes;
+}
+
 function refreshHighlighted() {
 	// this is following nearly identical logic, etc, as the refreshSelected function, but doing less junk for the highlighted pane
 	var highlighted = false;
@@ -1602,65 +1750,20 @@ function refreshHighlighted() {
 	var mapCanvas = $('#map_canvas');
 	var markerCoordinates = highlighted.marker.getGeometry().getCoordinates();
 	var markerPosition = OLMap.getPixelFromCoordinate(markerCoordinates);
-	var x = markerPosition[0];
-	var y = markerPosition[1];
-	if (x < 0 || y < 0 || x > mapCanvas.width() || y > mapCanvas.height()) {
+	if (markerPosition[0] < 0 || markerPosition[1] < 0 || markerPosition[0] > mapCanvas.width() || markerPosition[1] > mapCanvas.height()) {
 		infoBox.fadeOut();
 		return;
 	}
-	x = x + 20;
-	y = y + 60;
-	var w = infoBox.outerWidth() + 20;
-	var h = infoBox.outerHeight();
-	if (x > mapCanvas.width() - w) {
-		x -= w + 20;
-	}
-	if (y > mapCanvas.height() - h) {
-		y -= h;
-	}
+	var position = getMapInfoBoxPosition(infoBox, markerPosition, mapCanvas);
 	if (infoBox.css('visibility', 'visible')) {
-		infoBox.animate({ left: x, top: y }, 500);
+		infoBox.animate(position, 500);
 	} else {
-		infoBox.css({ left: x, top: y });
+		infoBox.css(position);
 	}
 	infoBox.fadeIn(100);
 
-	if (highlighted.flight !== null && highlighted.flight !== "") {
-		$('#highlighted_callsign').text(highlighted.flight);
-	} else {
-		$('#highlighted_callsign').text('n/a');
-	}
-
-	if (highlighted.icaotype !== null) {
-		$('#higlighted_icaotype').text(highlighted.icaotype);
-	} else {
-		$('#higlighted_icaotype').text("n/a");
-	}
-
-	var datasource = highlighted.getDataSource();
-	if (datasource === "uat") {
-		$('#highlighted_source').text("UAT");
-	} else if (datasource === "adsb_icao") {
-		$('#highlighted_source').text("ADS-B");
-	} else if (datasource === "tisb_trackfile" || datasource === "tisb_icao" || datasource === "tisb_other") {
-		$('#highlighted_source').text("TIS-B");
-	} else if (datasource === "mlat") {
-		$('#highlighted_source').text("MLAT");
-	} else {
-		$('#highlighted_source').text("Other");
-	}
-
-	if (highlighted.registration !== null) {
-		$('#highlighted_registration').text(highlighted.registration);
-	} else {
-		$('#highlighted_registration').text("n/a");
-	}
-
-	$('#highlighted_speed').text(format_speed_long(highlighted.speed, DisplayUnits));
-
-	$("#highlighted_altitude").text(format_altitude_long(highlighted.altitude, highlighted.vert_rate, DisplayUnits));
-
-	$('#highlighted_icao').text(highlighted.icao.toUpperCase());
+	updateHighlightedIdentity(highlighted);
+	updateHighlightedMetrics(highlighted);
 
 }
 
@@ -1694,64 +1797,15 @@ function refreshTableInfo() {
                         tableplane.tr.className = "plane_table_row hidden";
                 } else {
                         TrackedAircraft++;
-                        var classes = "plane_table_row";
-
                         if (tableplane.position !== null && tableplane.seen_pos < 60) {
                                 ++TrackedAircraftPositions;
                         }
 
-                        var datasource = tableplane.getDataSource();
-                        if (datasource === "uat") {
-                                classes += " uat";
-                        } else if (datasource === "adsb_icao") {
-                                classes += " vPosition";
-                        } else if (datasource === "tisb_trackfile" || datasource === "tisb_icao" || datasource === "tisb_other") {
-                                classes += " tisb";
-                        } else if (datasource === "mlat") {
-                                classes += " mlat";
-                        } else {
-                                classes += " other";
-                        }
-
-                        if (tableplane.icao == SelectedPlane)
-                                classes += " selected";
-
                         if (tableplane.squawk in SpecialSquawks) {
-                                classes = classes + " " + SpecialSquawks[tableplane.squawk].cssClass;
                                 show_squawk_warning = true;
                         }
 
-                        // ICAO doesn't change
-                        if (tableplane.flight) {
-                                tableplane.tr.cells[2].innerHTML = getFlightAwareModeSLink(tableplane.icao, tableplane.flight, tableplane.flight);
-				tableplane.tr.cells[2].className = "ident_normal";
-                        } else if (tableplane.registration !== null) {
-                                // Show registration with special styling if ident is not present
-				tableplane.tr.cells[2].innerHTML = getFlightAwareIdentLink(tableplane.registration, tableplane.registration);
-				tableplane.tr.cells[2].className = "ident_fallback";
-                        } else {
-				tableplane.tr.cells[2].innerHTML = "";
-				tableplane.tr.cells[2].className = "";
-			}
-
-                        tableplane.tr.cells[3].textContent = (tableplane.registration !== null ? tableplane.registration : "");
-                        tableplane.tr.cells[4].textContent = (tableplane.icaotype !== null ? tableplane.icaotype : "");
-                        tableplane.tr.cells[5].textContent = (tableplane.squawk !== null ? tableplane.squawk : "");
-                        tableplane.tr.cells[6].innerHTML = format_altitude_brief(tableplane.altitude, tableplane.vert_rate, DisplayUnits);
-                        tableplane.tr.cells[7].textContent = format_speed_brief(tableplane.gs, DisplayUnits);
-                        tableplane.tr.cells[8].textContent = format_vert_rate_brief(tableplane.vert_rate, DisplayUnits);
-                        tableplane.tr.cells[9].textContent = format_distance_brief(tableplane.sitedist, DisplayUnits);
-                        tableplane.tr.cells[10].textContent = format_track_brief(tableplane.track);
-                        tableplane.tr.cells[11].textContent = tableplane.messages;
-                        tableplane.tr.cells[12].textContent = tableplane.seen.toFixed(0);
-                        tableplane.tr.cells[13].textContent = (tableplane.rssi !== null ? tableplane.rssi : "");
-                        tableplane.tr.cells[14].textContent = (tableplane.position !== null ? tableplane.position[1].toFixed(4) : "");
-                        tableplane.tr.cells[15].textContent = (tableplane.position !== null ? tableplane.position[0].toFixed(4) : "");
-                        tableplane.tr.cells[16].textContent = format_data_source(tableplane.getDataSource());
-                        tableplane.tr.cells[17].innerHTML = getAirframesModeSLink(tableplane.icao);
-                        tableplane.tr.cells[18].innerHTML = getFlightAwareModeSLink(tableplane.icao, tableplane.flight);
-                        tableplane.tr.cells[19].innerHTML = getFlightAwarePhotoLink(tableplane.registration);
-                        tableplane.tr.className = classes;
+                        updateTablePlaneRow(tableplane, getTablePlaneClasses(tableplane));
                 }
         }
 
@@ -2069,6 +2123,86 @@ function resetMap() {
 
 function updateMapSize() {
     OLMap.updateSize();
+}
+
+function moveHighlightedInfoBlockIntoMap() {
+    var highlightedInfoBlock = document.getElementById('highlighted_infoblock');
+    var mapContainer = document.getElementById('map_container');
+
+    if (!highlightedInfoBlock || !mapContainer || highlightedInfoBlock.parentNode === mapContainer) {
+        return;
+    }
+
+    if (!highlightedInfoBlockOriginalParent) {
+        highlightedInfoBlockOriginalParent = highlightedInfoBlock.parentNode;
+        highlightedInfoBlockOriginalNextSibling = highlightedInfoBlock.nextSibling;
+    }
+
+    mapContainer.appendChild(highlightedInfoBlock);
+}
+
+function restoreHighlightedInfoBlockParent() {
+    var highlightedInfoBlock = document.getElementById('highlighted_infoblock');
+
+    if (!highlightedInfoBlock || !highlightedInfoBlockOriginalParent) {
+        return;
+    }
+
+    if (highlightedInfoBlockOriginalNextSibling && highlightedInfoBlockOriginalNextSibling.parentNode === highlightedInfoBlockOriginalParent) {
+        highlightedInfoBlockOriginalParent.insertBefore(highlightedInfoBlock, highlightedInfoBlockOriginalNextSibling);
+    } else {
+        highlightedInfoBlockOriginalParent.appendChild(highlightedInfoBlock);
+    }
+}
+
+function isMapFullscreen() {
+    return document.fullscreenElement === document.getElementById('map_container') || $('body').hasClass('mapFullscreen');
+}
+
+function updateFullscreenToggleLabel() {
+    $('#fullscreen_toggle_text').text(isMapFullscreen() ? 'Exit Full Screen' : 'Full Screen');
+}
+
+function enterMapFullscreenFallback() {
+    moveHighlightedInfoBlockIntoMap();
+    $('body').addClass('mapFullscreen');
+    updateFullscreenToggleLabel();
+    window.setTimeout(updateMapSize, 50);
+}
+
+function exitMapFullscreenFallback() {
+    $('body').removeClass('mapFullscreen');
+    restoreHighlightedInfoBlockParent();
+    updateFullscreenToggleLabel();
+    window.setTimeout(updateMapSize, 50);
+}
+
+function toggleMapFullscreen() {
+    var mapContainer = document.getElementById('map_container');
+    if (!mapContainer) {
+        return;
+    }
+
+    if (document.fullscreenEnabled && mapContainer.requestFullscreen) {
+        if (document.fullscreenElement === mapContainer) {
+            document.exitFullscreen();
+        } else {
+            mapContainer.requestFullscreen().catch(function() {
+                if ($('body').hasClass('mapFullscreen')) {
+                    exitMapFullscreenFallback();
+                } else {
+                    enterMapFullscreenFallback();
+                }
+            });
+        }
+        return;
+    }
+
+    if ($('body').hasClass('mapFullscreen')) {
+        exitMapFullscreenFallback();
+    } else {
+        enterMapFullscreenFallback();
+    }
 }
 
 function toggleSidebarVisibility(e) {
