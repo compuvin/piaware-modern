@@ -141,6 +141,9 @@
 		</style>
 	</head>
 	<body class="modern-shell statsShell">
+		<div id="loader">
+			<img id="spinny" src="spinny.gif" alt="Loading..." />
+		</div>
 		<div id="header" class="infoHeading">
 			<div class="logoContainer">
 				<a href="http://flightaware.com/" target="_blank"><img src="images/fa_logo_color.png" alt="FlightAware" class="flightawareLogo"></a>
@@ -258,6 +261,13 @@
 				function setClock() {
 					document.getElementById("clock_div").textContent = new Date().toLocaleString();
 				}
+				function setLoaderVisible(isVisible) {
+					var loader = document.getElementById("loader");
+					if (!loader) {
+						return;
+					}
+					loader.style.display = isVisible ? "block" : "none";
+				}
 				function setText(id, value) {
 					document.getElementById(id).textContent = value;
 				}
@@ -329,9 +339,14 @@
 						});
 				}
 				document.addEventListener("DOMContentLoaded", function() {
+					setLoaderVisible(true);
 					setClock();
 					window.setInterval(setClock, 500);
-					loadTypeAssetIndex().finally(loadStats);
+					loadTypeAssetIndex()
+						.finally(loadStats)
+						.finally(function() {
+							setLoaderVisible(false);
+						});
 				});
 			})();
 		</script>
