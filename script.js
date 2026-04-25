@@ -322,6 +322,10 @@ function initialize() {
 
 		// this is a little hacky, but the best, most consitent way of doing this. change the margin bottom of the table container to the height of the overlay
 		$('#selected_infoblock').on('resize', function() {
+			if (window.matchMedia('(max-width: 900px)').matches) {
+				$('#sidebar_canvas').css('margin-bottom', 0);
+				return;
+			}
 			$('#sidebar_canvas').css('margin-bottom', $('#selected_infoblock').height() + 'px');
 		});
 		// look at the window resize to resize the pop-up infoblock so it doesn't float off the bottom or go off the top
@@ -2165,7 +2169,11 @@ function setSelectedInfoBlockVisibility() {
 
     if (planeSelected && mapIsVisible) {
         $('#selected_infoblock').show();
-		$('#sidebar_canvas').css('margin-bottom', $('#selected_infoblock').height() + 'px');
+		if (window.matchMedia('(max-width: 900px)').matches) {
+			$('#sidebar_canvas').css('margin-bottom', 0);
+		} else {
+			$('#sidebar_canvas').css('margin-bottom', $('#selected_infoblock').height() + 'px');
+		}
     }
     else {
         $('#selected_infoblock').hide();

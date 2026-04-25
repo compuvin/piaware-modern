@@ -1663,12 +1663,14 @@ div#uat_update_error {
         right: auto;
         bottom: auto;
         height: auto;
+        width: auto;
+        max-width: 100%;
         margin: 14px 18px 18px;
+        box-sizing: border-box;
     }
 
     #highlighted_infoblock {
-        top: 16px;
-        left: 16px;
+        display: none !important;
     }
 
     .selectedAircraftThumbnailButton {
@@ -1694,13 +1696,80 @@ div#uat_update_error {
         padding-right: 14px;
     }
 
-    .modernHeadline {
-        font-size: 0.96rem;
+    #header {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
     }
 
-    #highlighted_infoblock {
-        width: calc(100% - 32px);
-        padding: 14px;
+    .logoContainer {
+        flex: 1 1 auto;
+        min-width: 0;
+        gap: 10px;
+    }
+
+    .menuContainer {
+        width: auto;
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    body.modern-shell:not(.historyShell):not(.statsShell) .flightawareLogo,
+    body.modern-shell:not(.historyShell):not(.statsShell) .modernBrandCopy,
+    body.modern-shell:not(.historyShell):not(.statsShell) .dateTime {
+        display: none;
+    }
+
+    body.modern-shell:not(.historyShell):not(.statsShell) .adsbLogo {
+        height: 28px;
+        max-width: calc(100vw - 110px);
+    }
+
+    body.modern-shell:not(.historyShell):not(.statsShell) .settingsContainer {
+        padding: 8px 10px;
+    }
+
+    body.modern-shell:not(.historyShell):not(.statsShell) .settingsContainer .buttonText {
+        display: none;
+    }
+
+    body.historyShell .modernHeadline,
+    body.statsShell .modernHeadline,
+    body.historyShell .dateTime,
+    body.statsShell .dateTime {
+        display: none;
+    }
+
+    body.historyShell .logoContainer,
+    body.statsShell .logoContainer {
+        gap: 10px;
+    }
+
+    body.historyShell .flightawareLogo,
+    body.statsShell .flightawareLogo {
+        height: 28px;
+        width: auto;
+    }
+
+    body.historyShell .modernBrandCopy,
+    body.statsShell .modernBrandCopy {
+        gap: 0;
+    }
+
+    body.historyShell .modernEyebrow,
+    body.statsShell .modernEyebrow {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+    }
+
+    .menuContainer .navToggle {
+        width: 24px;
+        height: 24px;
     }
 
     #map_container {
@@ -1709,9 +1778,7 @@ div#uat_update_error {
         height: clamp(300px, 46dvh, 520px);
     }
 
-    .dateTime,
     .button,
-    .settingsContainer,
     .config_button {
         width: 100%;
         justify-content: center;
