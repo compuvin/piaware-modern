@@ -238,6 +238,9 @@ label.sourceCheckboxChecked div.sourceCheckbox {
     background-position: center;
     background-size: 13px 13px;
     cursor: pointer;
+    border-radius: 8px;
+    border-color: var(--border-strong) !important;
+    background-color: rgba(10, 20, 32, 0.9) !important;
 }
 
 .sourceCheckbox {
@@ -906,15 +909,6 @@ dt {
     display: flex;
     align-items: center;
     gap: 10px;
-}
-
-.settingsCheckbox,
-.sourceCheckbox,
-.columnSelectCheckbox,
-.columnSelectAllCheckbox {
-    border-radius: 8px;
-    border-color: var(--border-strong) !important;
-    background-color: rgba(10, 20, 32, 0.9) !important;
 }
 
 #dump1090_infoblock {

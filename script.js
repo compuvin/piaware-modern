@@ -99,97 +99,102 @@ var DefaultMinMaxFilters = {
         'imperial' : {min: 0, maxSpeed: 600, maxAltitude: 65000}        // mph, ft
 };
 
+function getMessageHistoryForSource(receiver_source) {
+        return receiver_source === "skyaware978" ? MessageCountHistory_UAT : MessageCountHistory;
+}
+
+function setMessageHistoryForSource(receiver_source, history) {
+        if (receiver_source === "skyaware978") {
+                MessageCountHistory_UAT = history;
+        } else {
+                MessageCountHistory = history;
+        }
+}
+
+function updateMessageHistory(data, receiver_source) {
+        var history = getMessageHistoryForSource(receiver_source);
+
+        if (history.length > 0 && history[history.length - 1].messages > data.messages) {
+                history = [{
+                        'time' : history[history.length - 1].time,
+                        'messages' : 0
+                }];
+        }
+
+        history.push({ 'time' : data.now, 'messages' : data.messages });
+        if ((data.now - history[0].time) > 30) {
+                history.shift();
+        }
+
+        setMessageHistoryForSource(receiver_source, history);
+}
+
+function setPlaneFlagImage(plane) {
+        if (ShowFlags && plane.icaorange.flag_image !== null) {
+                $('img', plane.tr.cells[1]).attr('src', FlagPath + plane.icaorange.flag_image);
+                $('img', plane.tr.cells[1]).attr('title', plane.icaorange.country);
+        } else {
+                $('img', plane.tr.cells[1]).css('display', 'none');
+        }
+}
+
+function bindPlaneRowEvents(plane, hex) {
+        plane.tr.addEventListener('click', function(h, evt) {
+                if (evt.srcElement instanceof HTMLAnchorElement) {
+                        evt.stopPropagation();
+                        return;
+                }
+
+                if (!$("#map_container").is(":visible")) {
+                        showMap();
+                }
+                selectPlaneByHex(h, false);
+                adjustSelectedInfoBlockPosition();
+                evt.preventDefault();
+        }.bind(undefined, hex));
+
+        plane.tr.addEventListener('dblclick', function(h, evt) {
+                if (!$("#map_container").is(":visible")) {
+                        showMap();
+                }
+                selectPlaneByHex(h, true);
+                adjustSelectedInfoBlockPosition();
+                evt.preventDefault();
+        }.bind(undefined, hex));
+}
+
+function createPlane(hex) {
+        var plane = new PlaneObject(hex);
+        plane.filter = PlaneFilter;
+        plane.tr = PlaneRowTemplate.cloneNode(true);
+
+        if (hex[0] === '~') {
+                plane.tr.cells[0].textContent = hex.substring(1);
+                $(plane.tr).css('font-style', 'italic');
+        } else {
+                plane.tr.cells[0].textContent = hex;
+        }
+
+        setPlaneFlagImage(plane);
+        bindPlaneRowEvents(plane, hex);
+
+        Planes[hex] = plane;
+        PlanesOrdered.push(plane);
+        return plane;
+}
+
 // Update Planes with data in aircraft json
 // receiver_source will specify where the aircraft.json originated from (dump1090-fa or skyaware978)
 function processReceiverUpdate(data, receiver_source) {
         // Loop through all the planes in the data packet
         var now = data.now;
         var acs = data.aircraft;
-
-        if (receiver_source === "skyaware978") {
-                // Detect stats reset (i.e. if MessageCountHistory array is > 0 and the latest value > the "messages" field in the data packet)
-                if (MessageCountHistory_UAT.length > 0 && MessageCountHistory_UAT[MessageCountHistory_UAT.length-1].messages > data.messages) {
-                        MessageCountHistory_UAT = [{'time' : MessageCountHistory_UAT[MessageCountHistory_UAT.length-1].time,
-                                                'messages' : 0}];
-                }
-
-                // Maintain a 30 second rollinng history of message counts
-                MessageCountHistory_UAT.push({ 'time' : now, 'messages' : data.messages});
-                // .. and clean up any old values
-                if ((now - MessageCountHistory_UAT[0].time) > 30)
-                        MessageCountHistory_UAT.shift();
-        } else {
-                // Detect stats reset (i.e. if MessageCountHistory array is > 0 and the latest value > the "messages" field in the data packet)
-                if (MessageCountHistory.length > 0 && MessageCountHistory[MessageCountHistory.length-1].messages > data.messages) {
-                        MessageCountHistory = [{'time' : MessageCountHistory[MessageCountHistory.length-1].time,
-                                                'messages' : 0}];
-                }
-
-                // Maintain a 30 second rollinng history of message counts
-                MessageCountHistory.push({ 'time' : now, 'messages' : data.messages});
-                // .. and clean up any old values
-                if ((now - MessageCountHistory[0].time) > 30)
-                        MessageCountHistory.shift();
-        }
+        updateMessageHistory(data, receiver_source);
 
         for (var j=0; j < acs.length; j++) {
                 var ac = acs[j];
                 var hex = ac.hex;
-                var squawk = ac.squawk;
-                var plane = null;
-
-                // Do we already have this plane object in Planes?
-                // If not make it.
-
-                if (Planes[hex]) {
-                        plane = Planes[hex];
-                } else {
-                        plane = new PlaneObject(hex);
-                        plane.filter = PlaneFilter;
-                        plane.tr = PlaneRowTemplate.cloneNode(true);
-
-                        if (hex[0] === '~') {
-                                // Non-ICAO address
-                                plane.tr.cells[0].textContent = hex.substring(1);
-                                $(plane.tr).css('font-style', 'italic');
-                        } else {
-                                plane.tr.cells[0].textContent = hex;
-                        }
-
-                        // set flag image if available
-                        if (ShowFlags && plane.icaorange.flag_image !== null) {
-                                $('img', plane.tr.cells[1]).attr('src', FlagPath + plane.icaorange.flag_image);
-                                $('img', plane.tr.cells[1]).attr('title', plane.icaorange.country);
-                        } else {
-                                $('img', plane.tr.cells[1]).css('display', 'none');
-                        }
-
-                        plane.tr.addEventListener('click', function(h, evt) {
-                                if (evt.srcElement instanceof HTMLAnchorElement) {
-                                        evt.stopPropagation();
-                                        return;
-                                }
-
-                                if (!$("#map_container").is(":visible")) {
-                                        showMap();
-                                }
-                                selectPlaneByHex(h, false);
-                                adjustSelectedInfoBlockPosition();
-                                evt.preventDefault();
-                        }.bind(undefined, hex));
-
-                        plane.tr.addEventListener('dblclick', function(h, evt) {
-                                if (!$("#map_container").is(":visible")) {
-                                        showMap();
-                                }
-                                selectPlaneByHex(h, true);
-                                adjustSelectedInfoBlockPosition();
-                                evt.preventDefault();
-                        }.bind(undefined, hex));
-
-                        Planes[hex] = plane;
-                        PlanesOrdered.push(plane);
-                }
+                var plane = Planes[hex] || createPlane(hex);
 
                 // Call the function update
                 plane.updateData(now, ac, receiver_source);
