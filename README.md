@@ -88,6 +88,10 @@ The service installer:
 - Aircraft images are cached automatically under `assets/aircraft/types/` as
   aircraft types are resolved.
 - Those runtime cache files are intentionally not tracked in git.
+- Service logs are written under `logs/`:
+  - `logs/flight-history.log`
+  - `logs/aircraft-image-cache.log`
+- Logs rotate daily and keep the previous 7 rotated log files.
 
 ## URLs
 

@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=@PROJECT_ROOT@/services
-ExecStart=/usr/bin/python3 @PROJECT_ROOT@/services/aircraft_image_cache_server.py --host 0.0.0.0 --port 8765
+ExecStart=/usr/bin/python3 @PROJECT_ROOT@/services/aircraft_image_cache_server.py --host 0.0.0.0 --port 8765 --log-file @PROJECT_ROOT@/logs/aircraft-image-cache.log
 Restart=on-failure
 RestartSec=3
 

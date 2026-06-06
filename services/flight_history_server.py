@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import sqlite3
 import threading
@@ -12,6 +13,7 @@ import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -22,16 +24,35 @@ from urllib.request import Request, urlopen
 SERVICE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVICE_ROOT.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "flight_history.sqlite3"
+DEFAULT_LOG_PATH = PROJECT_ROOT / "logs" / "flight-history.log"
 DEFAULT_SOURCE_URL = "http://127.0.0.1/skyaware/data/aircraft.json"
 DEFAULT_SOURCE_URL_978 = ""
 AIRCRAFT_DB_DIR = PROJECT_ROOT / "db"
 AIRCRAFT_TYPE_DB_PATH = AIRCRAFT_DB_DIR / "aircraft_types" / "icao_aircraft_types.json"
 AIRCRAFT_IMAGE_CACHE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 USER_AGENT = "piaware-modern-flight-history/1.0"
+LOGGER = logging.getLogger("piaware-modern-history")
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    LOGGER.info(message)
+
+
+def setup_logging(log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    file_handler = TimedRotatingFileHandler(log_path, when="midnight", backupCount=7)
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    LOGGER.addHandler(file_handler)
+    LOGGER.addHandler(console_handler)
+    LOGGER.propagate = False
 
 
 def utc_now() -> int:
@@ -947,6 +968,7 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
+    parser.add_argument("--log-file", type=Path, default=DEFAULT_LOG_PATH)
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument("--source-url-978", default=DEFAULT_SOURCE_URL_978)
     parser.add_argument("--poll-interval", type=float, default=2.0)
@@ -954,6 +976,7 @@ def main() -> None:
     parser.add_argument("--min-position-distance-m", type=float, default=750.0)
     parser.add_argument("--flight-gap-seconds", type=int, default=1800)
     args = parser.parse_args()
+    setup_logging(args.log_file)
 
     config = LoggerConfig(
         db_path=args.db_path,

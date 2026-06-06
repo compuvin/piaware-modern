@@ -6,11 +6,13 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import logging
 import os
 import re
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -22,9 +24,11 @@ SERVICE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVICE_ROOT.parent
 TYPE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 INDEX_PATH = TYPE_DIR / "index.json"
+DEFAULT_LOG_PATH = PROJECT_ROOT / "logs" / "aircraft-image-cache.log"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "piaware-modern-aircraft-cache/1.0"
 LOCK = threading.Lock()
+LOGGER = logging.getLogger("piaware-modern-aircraft-cache")
 
 
 TYPE_SEARCH = {
@@ -118,7 +122,24 @@ def normalize_type(type_code: str) -> str:
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    LOGGER.info(message)
+
+
+def setup_logging(log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    file_handler = TimedRotatingFileHandler(log_path, when="midnight", backupCount=7)
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    LOGGER.addHandler(file_handler)
+    LOGGER.addHandler(console_handler)
+    LOGGER.propagate = False
 
 
 def load_index() -> dict[str, Any]:
@@ -374,11 +395,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--log-file", type=Path, default=DEFAULT_LOG_PATH)
     args = parser.parse_args()
+    setup_logging(args.log_file)
 
     TYPE_DIR.mkdir(parents=True, exist_ok=True)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"aircraft image cache server listening on http://{args.host}:{args.port}")
+    log(f"[cache] listening on http://{args.host}:{args.port}")
     httpd.serve_forever()
 
 
