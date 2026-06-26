@@ -31,11 +31,18 @@ AIRCRAFT_DB_DIR = PROJECT_ROOT / "db"
 AIRCRAFT_TYPE_DB_PATH = AIRCRAFT_DB_DIR / "aircraft_types" / "icao_aircraft_types.json"
 AIRCRAFT_IMAGE_CACHE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 USER_AGENT = "piaware-modern-flight-history/1.0"
+STATS_CACHE_KEY = "history_stats"
+STATS_CACHE_TTL_SECONDS = 900
 LOGGER = logging.getLogger("piaware-modern-history")
 
 
 def log(message: str) -> None:
     LOGGER.info(message)
+
+
+def configure_sqlite_connection(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA mmap_size=0")
 
 
 def setup_logging(log_path: Path) -> None:
@@ -121,10 +128,13 @@ class FlightHistoryStore:
         self.lock = threading.Lock()
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        configure_sqlite_connection(self.conn)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.aircraft_metadata_cache: dict[str, dict[str, Any] | None] = {}
         self.aircraft_type_cache: dict[str, dict[str, Any]] | None = None
+        self.stats_refresh_lock = threading.Lock()
+        self.stats_refreshing = False
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -180,6 +190,30 @@ class FlightHistoryStore:
                 CREATE INDEX IF NOT EXISTS idx_flights_icao_start ON flights (icao, start_ts DESC);
                 CREATE INDEX IF NOT EXISTS idx_flights_last_seen ON flights (last_seen_ts DESC);
                 CREATE INDEX IF NOT EXISTS idx_positions_flight_ts ON positions (flight_id, ts);
+                CREATE INDEX IF NOT EXISTS idx_positions_ts ON positions (ts);
+                CREATE INDEX IF NOT EXISTS idx_aircraft_last_seen ON aircraft (last_seen_ts DESC);
+
+                CREATE TABLE IF NOT EXISTS history_stats_cache (
+                    key TEXT PRIMARY KEY,
+                    value_json TEXT NOT NULL,
+                    updated_ts INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS history_daily_stats (
+                    day TEXT PRIMARY KEY,
+                    positions INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS history_aircraft_stats (
+                    icao TEXT PRIMARY KEY,
+                    flights INTEGER NOT NULL DEFAULT 0,
+                    positions INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS history_stats_meta (
+                    key TEXT PRIMARY KEY,
+                    value INTEGER NOT NULL
+                );
                 """
             )
 
@@ -565,12 +599,162 @@ class FlightHistoryStore:
         }
 
     def stats(self) -> dict[str, Any]:
-        week_cutoff = int(time.time()) - (7 * 24 * 60 * 60)
+        cached = self._read_stats_cache()
+        now = utc_now()
+        if cached and (now - int(cached.get("stats_cache_updated_ts") or 0)) > STATS_CACHE_TTL_SECONDS:
+            self.refresh_stats_cache_async()
+
+        if not cached:
+            self.refresh_stats_cache_async()
+            cached = self._empty_stats_payload("building")
+
+        payload = dict(cached)
+        payload.update(self._stats_file_sizes())
+        payload["stats_cache_refreshing"] = self.stats_refreshing
+        return payload
+
+    def refresh_stats_cache_async(self, *, force: bool = False) -> None:
+        if not force:
+            cached = self._read_stats_cache()
+            if cached and (utc_now() - int(cached.get("stats_cache_updated_ts") or 0)) <= STATS_CACHE_TTL_SECONDS:
+                return
+
+        with self.stats_refresh_lock:
+            if self.stats_refreshing:
+                return
+            self.stats_refreshing = True
+
+        thread = threading.Thread(target=self._refresh_stats_cache, name="history-stats-cache-refresh", daemon=True)
+        thread.start()
+
+    def _refresh_stats_cache(self) -> None:
+        started = time.perf_counter()
+        try:
+            payload = self._build_stats_payload()
+            encoded = json.dumps(payload, separators=(",", ":"))
+            with self.lock:
+                self.conn.execute(
+                    """
+                    INSERT INTO history_stats_cache (key, value_json, updated_ts)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value_json = excluded.value_json,
+                        updated_ts = excluded.updated_ts
+                    """,
+                    (STATS_CACHE_KEY, encoded, int(payload["stats_cache_updated_ts"])),
+                )
+                self.conn.commit()
+            log(f"[history] refreshed stats cache in {time.perf_counter() - started:.1f}s")
+        except Exception as exc:
+            LOGGER.exception("[history] failed to refresh stats cache: %s", exc)
+        finally:
+            with self.stats_refresh_lock:
+                self.stats_refreshing = False
+
+    def _read_stats_cache(self) -> dict[str, Any] | None:
         with self.lock:
-            aircraft_count = int(self.conn.execute("SELECT COUNT(*) FROM aircraft").fetchone()[0])
-            flight_count = int(self.conn.execute("SELECT COUNT(*) FROM flights").fetchone()[0])
-            position_count = int(self.conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0])
-            oldest = self.conn.execute(
+            row = self.conn.execute(
+                "SELECT value_json, updated_ts FROM history_stats_cache WHERE key = ?",
+                (STATS_CACHE_KEY,),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row["value_json"])
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        payload["stats_cache_updated_ts"] = int(row["updated_ts"])
+        payload["stats_cache_status"] = "ready"
+        return payload
+
+    def _empty_stats_payload(self, status: str) -> dict[str, Any]:
+        return {
+            "aircraft_count": 0,
+            "flight_count": 0,
+            "position_count": 0,
+            "db_internal_bytes": 0,
+            "oldest_aircraft_ts": None,
+            "oldest_flight_ts": None,
+            "oldest_position_ts": None,
+            "newest_aircraft_ts": None,
+            "newest_flight_ts": None,
+            "newest_position_ts": None,
+            "positions_per_day": [],
+            "busy_aircraft": [],
+            "unique_week_aircraft": [],
+            "stats_cache_updated_ts": None,
+            "stats_cache_status": status,
+        }
+
+    def _stats_file_sizes(self) -> dict[str, int]:
+        wal_path = Path(str(self.db_path) + "-wal")
+        shm_path = Path(str(self.db_path) + "-shm")
+        db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+        wal_size = wal_path.stat().st_size if wal_path.exists() else 0
+        shm_size = shm_path.stat().st_size if shm_path.exists() else 0
+        image_cache_size = 0
+        if AIRCRAFT_IMAGE_CACHE_DIR.exists():
+            image_cache_size = sum(
+                path.stat().st_size for path in AIRCRAFT_IMAGE_CACHE_DIR.rglob("*") if path.is_file()
+            )
+        return {
+            "db_size_bytes": db_size,
+            "wal_size_bytes": wal_size,
+            "shm_size_bytes": shm_size,
+            "image_cache_size_bytes": image_cache_size,
+        }
+
+    def _meta_int(self, conn: sqlite3.Connection, key: str, default: int = 0) -> int:
+        row = conn.execute("SELECT value FROM history_stats_meta WHERE key = ?", (key,)).fetchone()
+        return int(row["value"]) if row else default
+
+    def _set_meta_int(self, conn: sqlite3.Connection, key: str, value: int) -> None:
+        conn.execute(
+            """
+            INSERT INTO history_stats_meta (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, int(value)),
+        )
+
+    def _bootstrap_stats_rollups(self, conn: sqlite3.Connection) -> None:
+        log("[history] bootstrapping stats rollups from existing history")
+        started = time.perf_counter()
+        with conn:
+            conn.execute("DELETE FROM history_daily_stats")
+            conn.execute("DELETE FROM history_aircraft_stats")
+            conn.execute(
+                """
+                INSERT INTO history_daily_stats (day, positions)
+                SELECT
+                    strftime('%Y-%m-%d', datetime(ts, 'unixepoch', 'localtime')) AS day,
+                    COUNT(*) AS positions
+                FROM positions
+                GROUP BY day
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO history_aircraft_stats (icao, flights, positions)
+                SELECT
+                    a.icao,
+                    COUNT(f.id) AS flights,
+                    COALESCE(SUM(f.position_count), 0) AS positions
+                FROM aircraft a
+                LEFT JOIN flights f ON f.icao = a.icao
+                GROUP BY a.icao
+                """
+            )
+
+            aircraft_count = int(conn.execute("SELECT COUNT(*) FROM history_aircraft_stats").fetchone()[0])
+            flight_count = int(conn.execute("SELECT COUNT(*) FROM flights").fetchone()[0])
+            position_count = int(conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0])
+            last_flight_id = int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM flights").fetchone()[0])
+            last_position_id = int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM positions").fetchone()[0])
+            oldest = conn.execute(
                 """
                 SELECT
                     (SELECT MIN(first_seen_ts) FROM aircraft) AS oldest_aircraft_ts,
@@ -578,7 +762,7 @@ class FlightHistoryStore:
                     (SELECT MIN(ts) FROM positions) AS oldest_position_ts
                 """
             ).fetchone()
-            newest = self.conn.execute(
+            newest = conn.execute(
                 """
                 SELECT
                     (SELECT MAX(last_seen_ts) FROM aircraft) AS newest_aircraft_ts,
@@ -586,38 +770,217 @@ class FlightHistoryStore:
                     (SELECT MAX(ts) FROM positions) AS newest_position_ts
                 """
             ).fetchone()
-            pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
-            page_size = self.conn.execute("PRAGMA page_size").fetchone()[0]
 
-            recent_days = self.conn.execute(
+            self._set_meta_int(conn, "aircraft_count", aircraft_count)
+            self._set_meta_int(conn, "flight_count", flight_count)
+            self._set_meta_int(conn, "position_count", position_count)
+            self._set_meta_int(conn, "last_flight_id", last_flight_id)
+            self._set_meta_int(conn, "last_position_id", last_position_id)
+            self._set_meta_int(conn, "oldest_aircraft_ts", oldest["oldest_aircraft_ts"] or 0)
+            self._set_meta_int(conn, "oldest_flight_ts", oldest["oldest_flight_ts"] or 0)
+            self._set_meta_int(conn, "oldest_position_ts", oldest["oldest_position_ts"] or 0)
+            self._set_meta_int(conn, "newest_aircraft_ts", newest["newest_aircraft_ts"] or 0)
+            self._set_meta_int(conn, "newest_flight_ts", newest["newest_flight_ts"] or 0)
+            self._set_meta_int(conn, "newest_position_ts", newest["newest_position_ts"] or 0)
+            self._set_meta_int(conn, "rollups_bootstrapped", 1)
+        log(f"[history] bootstrapped stats rollups in {time.perf_counter() - started:.1f}s")
+
+    def _update_stats_rollups(self, conn: sqlite3.Connection) -> None:
+        if not self._meta_int(conn, "rollups_bootstrapped"):
+            self._bootstrap_stats_rollups(conn)
+            return
+
+        last_flight_id = self._meta_int(conn, "last_flight_id")
+        last_position_id = self._meta_int(conn, "last_position_id")
+        current_flight_id = int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM flights").fetchone()[0])
+        current_position_id = int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM positions").fetchone()[0])
+
+        with conn:
+            new_aircraft = conn.execute(
                 """
-                SELECT
-                    strftime('%Y-%m-%d', datetime(ts, 'unixepoch', 'localtime')) AS day,
-                    COUNT(*) AS positions
-                FROM positions
-                GROUP BY day
+                SELECT COUNT(*) AS count,
+                       MIN(first_seen_ts) AS oldest_aircraft_ts,
+                       MAX(last_seen_ts) AS newest_aircraft_ts
+                FROM aircraft
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM history_aircraft_stats s
+                    WHERE s.icao = aircraft.icao
+                )
+                """
+            ).fetchone()
+            new_aircraft_count = int(new_aircraft["count"] or 0)
+            if new_aircraft_count:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO history_aircraft_stats (icao, flights, positions)
+                    SELECT icao, 0, 0
+                    FROM aircraft
+                    """
+                )
+                self._set_meta_int(conn, "aircraft_count", self._meta_int(conn, "aircraft_count") + new_aircraft_count)
+                oldest_aircraft_ts = int(new_aircraft["oldest_aircraft_ts"] or 0)
+                if oldest_aircraft_ts:
+                    previous = self._meta_int(conn, "oldest_aircraft_ts")
+                    self._set_meta_int(conn, "oldest_aircraft_ts", min(previous, oldest_aircraft_ts) if previous else oldest_aircraft_ts)
+
+            previous_newest_aircraft_ts = self._meta_int(conn, "newest_aircraft_ts")
+            newest_aircraft = conn.execute(
+                "SELECT MAX(last_seen_ts) FROM aircraft WHERE last_seen_ts > ?",
+                (previous_newest_aircraft_ts,),
+            ).fetchone()[0]
+            if newest_aircraft:
+                self._set_meta_int(conn, "newest_aircraft_ts", int(newest_aircraft))
+
+            if current_flight_id > last_flight_id:
+                flight_summary = conn.execute(
+                    """
+                    SELECT COUNT(*) AS count,
+                           MIN(start_ts) AS oldest_flight_ts,
+                           MAX(last_seen_ts) AS newest_flight_ts
+                    FROM flights
+                    WHERE id > ?
+                    """,
+                    (last_flight_id,),
+                ).fetchone()
+                new_flight_count = int(flight_summary["count"] or 0)
+                self._set_meta_int(conn, "flight_count", self._meta_int(conn, "flight_count") + new_flight_count)
+                if flight_summary["oldest_flight_ts"]:
+                    previous = self._meta_int(conn, "oldest_flight_ts")
+                    oldest_flight_ts = int(flight_summary["oldest_flight_ts"])
+                    self._set_meta_int(conn, "oldest_flight_ts", min(previous, oldest_flight_ts) if previous else oldest_flight_ts)
+                if flight_summary["newest_flight_ts"]:
+                    self._set_meta_int(
+                        conn,
+                        "newest_flight_ts",
+                        max(self._meta_int(conn, "newest_flight_ts"), int(flight_summary["newest_flight_ts"])),
+                    )
+
+                for row in conn.execute(
+                    """
+                    SELECT icao, COUNT(*) AS flights
+                    FROM flights
+                    WHERE id > ?
+                    GROUP BY icao
+                    """,
+                    (last_flight_id,),
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO history_aircraft_stats (icao, flights, positions)
+                        VALUES (?, ?, 0)
+                        ON CONFLICT(icao) DO UPDATE SET
+                            flights = flights + excluded.flights
+                        """,
+                        (row["icao"], int(row["flights"])),
+                    )
+                self._set_meta_int(conn, "last_flight_id", current_flight_id)
+
+            if current_position_id > last_position_id:
+                position_summary = conn.execute(
+                    """
+                    SELECT COUNT(*) AS count,
+                           MIN(ts) AS oldest_position_ts,
+                           MAX(ts) AS newest_position_ts
+                    FROM positions
+                    WHERE id > ?
+                    """,
+                    (last_position_id,),
+                ).fetchone()
+                new_position_count = int(position_summary["count"] or 0)
+                self._set_meta_int(conn, "position_count", self._meta_int(conn, "position_count") + new_position_count)
+                if position_summary["oldest_position_ts"]:
+                    previous = self._meta_int(conn, "oldest_position_ts")
+                    oldest_position_ts = int(position_summary["oldest_position_ts"])
+                    self._set_meta_int(conn, "oldest_position_ts", min(previous, oldest_position_ts) if previous else oldest_position_ts)
+                if position_summary["newest_position_ts"]:
+                    self._set_meta_int(
+                        conn,
+                        "newest_position_ts",
+                        max(self._meta_int(conn, "newest_position_ts"), int(position_summary["newest_position_ts"])),
+                    )
+
+                for row in conn.execute(
+                    """
+                    SELECT
+                        strftime('%Y-%m-%d', datetime(ts, 'unixepoch', 'localtime')) AS day,
+                        COUNT(*) AS positions
+                    FROM positions
+                    WHERE id > ?
+                    GROUP BY day
+                    """,
+                    (last_position_id,),
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO history_daily_stats (day, positions)
+                        VALUES (?, ?)
+                        ON CONFLICT(day) DO UPDATE SET
+                            positions = positions + excluded.positions
+                        """,
+                        (row["day"], int(row["positions"])),
+                    )
+
+                for row in conn.execute(
+                    """
+                    SELECT f.icao, COUNT(*) AS positions
+                    FROM positions p
+                    JOIN flights f ON f.id = p.flight_id
+                    WHERE p.id > ?
+                    GROUP BY f.icao
+                    """,
+                    (last_position_id,),
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO history_aircraft_stats (icao, flights, positions)
+                        VALUES (?, 0, ?)
+                        ON CONFLICT(icao) DO UPDATE SET
+                            positions = positions + excluded.positions
+                        """,
+                        (row["icao"], int(row["positions"])),
+                    )
+                self._set_meta_int(conn, "last_position_id", current_position_id)
+
+    def _build_stats_payload(self) -> dict[str, Any]:
+        week_cutoff = int(time.time()) - (7 * 24 * 60 * 60)
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
+        conn.row_factory = sqlite3.Row
+        configure_sqlite_connection(conn)
+        try:
+            self._update_stats_rollups(conn)
+            aircraft_count = self._meta_int(conn, "aircraft_count")
+            flight_count = self._meta_int(conn, "flight_count")
+            position_count = self._meta_int(conn, "position_count")
+            pages = conn.execute("PRAGMA page_count").fetchone()[0]
+            page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+
+            recent_days = conn.execute(
+                """
+                SELECT day, positions
+                FROM history_daily_stats
                 ORDER BY day DESC
                 LIMIT 14
                 """
             ).fetchall()
 
-            busy_aircraft = self.conn.execute(
+            busy_aircraft = conn.execute(
                 """
                 SELECT
                     a.icao,
                     a.registration,
                     a.aircraft_type,
-                    COUNT(f.id) AS flights,
-                    COALESCE(SUM(f.position_count), 0) AS positions
-                FROM aircraft a
-                LEFT JOIN flights f ON f.icao = a.icao
-                GROUP BY a.icao, a.registration, a.aircraft_type
-                ORDER BY positions DESC, flights DESC
+                    a.description,
+                    s.flights,
+                    s.positions
+                FROM history_aircraft_stats s
+                LEFT JOIN aircraft a ON a.icao = s.icao
+                ORDER BY s.positions DESC, s.flights DESC
                 LIMIT 10
                 """
             ).fetchall()
 
-            unique_week_aircraft = self.conn.execute(
+            unique_week_aircraft = conn.execute(
                 """
                 WITH recent_aircraft AS (
                     SELECT
@@ -651,37 +1014,42 @@ class FlightHistoryStore:
                 """,
                 (week_cutoff,),
             ).fetchall()
-
-        wal_path = Path(str(self.db_path) + "-wal")
-        shm_path = Path(str(self.db_path) + "-shm")
-        db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
-        wal_size = wal_path.stat().st_size if wal_path.exists() else 0
-        shm_size = shm_path.stat().st_size if shm_path.exists() else 0
-        image_cache_size = 0
-        if AIRCRAFT_IMAGE_CACHE_DIR.exists():
-            image_cache_size = sum(
-                path.stat().st_size for path in AIRCRAFT_IMAGE_CACHE_DIR.rglob("*") if path.is_file()
-            )
+            oldest_aircraft_ts = self._meta_int(conn, "oldest_aircraft_ts") or None
+            oldest_flight_ts = self._meta_int(conn, "oldest_flight_ts") or None
+            oldest_position_ts = self._meta_int(conn, "oldest_position_ts") or None
+            newest_aircraft_ts = self._meta_int(conn, "newest_aircraft_ts") or None
+            newest_flight_ts = self._meta_int(conn, "newest_flight_ts") or None
+            newest_position_ts = self._meta_int(conn, "newest_position_ts") or None
+        finally:
+            conn.close()
 
         return {
             "aircraft_count": aircraft_count,
             "flight_count": flight_count,
             "position_count": position_count,
-            "db_size_bytes": db_size,
-            "wal_size_bytes": wal_size,
-            "shm_size_bytes": shm_size,
             "db_internal_bytes": pages * page_size,
-            "image_cache_size_bytes": image_cache_size,
-            "oldest_aircraft_ts": oldest["oldest_aircraft_ts"] if oldest else None,
-            "oldest_flight_ts": oldest["oldest_flight_ts"] if oldest else None,
-            "oldest_position_ts": oldest["oldest_position_ts"] if oldest else None,
-            "newest_aircraft_ts": newest["newest_aircraft_ts"] if newest else None,
-            "newest_flight_ts": newest["newest_flight_ts"] if newest else None,
-            "newest_position_ts": newest["newest_position_ts"] if newest else None,
+            "oldest_aircraft_ts": oldest_aircraft_ts,
+            "oldest_flight_ts": oldest_flight_ts,
+            "oldest_position_ts": oldest_position_ts,
+            "newest_aircraft_ts": newest_aircraft_ts,
+            "newest_flight_ts": newest_flight_ts,
+            "newest_position_ts": newest_position_ts,
             "positions_per_day": [dict(row) for row in recent_days],
-            "busy_aircraft": [dict(row) for row in busy_aircraft],
-            "unique_week_aircraft": [self._enrich_row_metadata(dict(row)) for row in unique_week_aircraft],
+            "busy_aircraft": [self._enrich_row_metadata_from_cache(dict(row)) for row in busy_aircraft],
+            "unique_week_aircraft": [self._enrich_row_metadata_from_cache(dict(row)) for row in unique_week_aircraft],
+            "stats_cache_updated_ts": utc_now(),
+            "stats_cache_status": "ready",
         }
+
+    def _enrich_row_metadata_from_cache(self, row: dict[str, Any]) -> dict[str, Any]:
+        icao = row.get("icao")
+        if not icao:
+            return row
+        metadata = self._metadata_for_icao(str(icao))
+        for key in ("registration", "aircraft_type", "description"):
+            if not row.get(key) and metadata.get(key):
+                row[key] = metadata[key]
+        return row
 
     def list_aircraft(self, limit: int, search: str | None) -> list[dict[str, Any]]:
         query = """
@@ -871,6 +1239,18 @@ class Poller(threading.Thread):
             self.stop_event.wait(self.config.poll_interval)
 
 
+class StatsCacheRefresher(threading.Thread):
+    def __init__(self, store: FlightHistoryStore, interval_seconds: float) -> None:
+        super().__init__(daemon=True)
+        self.store = store
+        self.interval_seconds = max(60.0, interval_seconds)
+        self.stop_event = threading.Event()
+
+    def run(self) -> None:
+        while not self.stop_event.wait(self.interval_seconds):
+            self.store._refresh_stats_cache()
+
+
 class Handler(BaseHTTPRequestHandler):
     store: FlightHistoryStore | None = None
 
@@ -995,6 +1375,9 @@ def main() -> None:
         min_position_distance_m=config.min_position_distance_m,
         flight_gap_seconds=config.flight_gap_seconds,
     )
+    store._refresh_stats_cache()
+    stats_refresher = StatsCacheRefresher(store, STATS_CACHE_TTL_SECONDS)
+    stats_refresher.start()
     poller = Poller(store, config)
     poller.start()
 

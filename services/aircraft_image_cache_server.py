@@ -26,44 +26,13 @@ TYPE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 INDEX_PATH = TYPE_DIR / "index.json"
 DEFAULT_LOG_PATH = PROJECT_ROOT / "logs" / "aircraft-image-cache.log"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "piaware-modern-aircraft-cache/1.0"
 LOCK = threading.Lock()
 LOGGER = logging.getLogger("piaware-modern-aircraft-cache")
 
 
-TYPE_SEARCH = {
-    "A19N": "Airbus A319neo",
-    "A20N": "Airbus A320neo",
-    "A21N": "Airbus A321neo",
-    "A220": "Airbus A220",
-    "A319": "Airbus A319",
-    "A320": "Airbus A320",
-    "A321": "Airbus A321",
-    "B38M": "Boeing 737 MAX 8",
-    "B39M": "Boeing 737 MAX 9",
-    "B738": "Boeing 737-800",
-    "B739": "Boeing 737-900",
-    "B772": "Boeing 777-200",
-    "B77W": "Boeing 777-300ER",
-    "B788": "Boeing 787-8",
-    "B789": "Boeing 787-9",
-    "C172": "Cessna 172",
-    "C208": "Cessna 208 Caravan",
-    "CRJ9": "Canadair Regional Jet CRJ-900",
-    "E170": "Embraer 170",
-    "E175": "Embraer 175",
-    "E190": "Embraer 190",
-    "E195": "Embraer 195",
-    "PC12": "Pilatus PC-12",
-}
-
-TYPE_ALIASES = {
-    "E75L": "E175",
-    "E75S": "E175",
-    "E290": "E190",
-    "E295": "E195",
-    "CL65": "CRJ9",
-}
+TYPE_SEARCH = {}
 
 BAD_TITLE_WORDS = {
     "AIRPORT",
@@ -117,8 +86,7 @@ AIRCRAFT_HINT_WORDS = {
 
 
 def normalize_type(type_code: str) -> str:
-    cleaned = re.sub(r"[^A-Z0-9]", "", type_code.upper())
-    return TYPE_ALIASES.get(cleaned, cleaned)
+    return re.sub(r"[^A-Z0-9]", "", type_code.upper())
 
 
 def log(message: str) -> None:
@@ -187,8 +155,84 @@ def guess_search_term(type_code: str) -> str:
     return type_code
 
 
-def search_queries(type_code: str) -> list[str]:
-    term = guess_search_term(type_code)
+def score_aircraft_name_result(type_code: str, title: str, snippet: str) -> int:
+    normalized_type = re.sub(r"[^A-Z0-9]", "", type_code.upper())
+    normalized_title = re.sub(r"[^A-Z0-9]", "", title.upper())
+    text = f"{title} {snippet}".upper()
+    words = set(re.findall(r"[A-Z0-9]+", text))
+    score = 0
+
+    if normalized_type and normalized_type in normalized_title:
+        score += 35
+    elif normalized_type and normalized_type in re.sub(r"[^A-Z0-9]", "", text):
+        score += 20
+
+    if any(word in words for word in AIRCRAFT_HINT_WORDS):
+        score += 20
+    if re.search(r"\b(AIRCRAFT|AIRPLANE|AEROPLANE|AVIATION|TWIN-ENGINE|SINGLE-ENGINE)\b", text):
+        score += 15
+    if "(DISAMBIGUATION)" in title.upper():
+        score -= 35
+    if any(word in words for word in BAD_TITLE_WORDS):
+        score -= 35
+    if re.search(r"\b(ROUTE|ROAD|HIGHWAY|COUNTY|TOWNSHIP|ELECTION|DISTRICT)\b", text):
+        score -= 35
+
+    return score
+
+
+def resolve_aircraft_name_from_wikipedia(type_code: str) -> str | None:
+    queries = [
+        f'"{type_code}" aircraft',
+        f'"{type_code}" ICAO aircraft',
+        f'"{type_code}" aircraft type',
+    ]
+    best_title: str | None = None
+    best_score = -10_000
+
+    for query in queries:
+        params = {
+            "action": "query",
+            "format": "json",
+            "list": "search",
+            "srlimit": "5",
+            "srsearch": query,
+        }
+        data = fetch_json(f"{WIKIPEDIA_API}?{urlencode(params)}")
+        results = data.get("query", {}).get("search", [])
+
+        for result in results:
+            title = result.get("title", "")
+            snippet = strip_html(result.get("snippet", ""))
+            if not title:
+                continue
+            score = score_aircraft_name_result(type_code, title, snippet)
+            if score > best_score:
+                best_title = title
+                best_score = score
+
+    return best_title if best_title and best_score >= 40 else None
+
+
+def resolve_search_term(type_code: str) -> str:
+    guessed = guess_search_term(type_code)
+    if guessed != type_code:
+        return guessed
+
+    try:
+        wikipedia_name = resolve_aircraft_name_from_wikipedia(type_code)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        log(f"[cache] Wikipedia aircraft name lookup failed for {type_code}: {exc}")
+        wikipedia_name = None
+
+    if wikipedia_name:
+        log(f"[cache] Wikipedia aircraft name for {type_code}: {wikipedia_name}")
+        return wikipedia_name
+
+    return type_code
+
+
+def search_queries(type_code: str, term: str) -> list[str]:
     queries = [f'"{term}" aircraft', f'"{term}" airplane', f'"{term}" aviation', f'"{term}"']
     if term == type_code:
         queries.extend([f'"{type_code}" aircraft', f'"{type_code}" airplane'])
@@ -228,12 +272,11 @@ def is_plausible_aircraft_result(title: str) -> bool:
     return True
 
 
-def search_commons_file(type_code: str) -> str | None:
-    term = guess_search_term(type_code)
+def search_commons_file(type_code: str, term: str) -> str | None:
     best_title: str | None = None
     best_score = -10_000
 
-    for query in search_queries(type_code):
+    for query in search_queries(type_code, term):
         params = {
             "action": "query",
             "format": "json",
@@ -300,7 +343,8 @@ def resolve_type(type_code: str) -> dict[str, Any]:
                 log(f"[cache] hit for {type_code}: {existing['asset']}")
                 return {"status": "ready", **existing}
 
-    file_title = search_commons_file(type_code)
+    search_term = resolve_search_term(type_code)
+    file_title = search_commons_file(type_code, search_term)
     if not file_title:
         log(f"[cache] no Commons search result for {type_code}")
         return {"status": "missing", "reason": "no_search_result"}
@@ -328,8 +372,8 @@ def resolve_type(type_code: str) -> dict[str, Any]:
     meta = info.get("extmetadata", {})
     artist = strip_html(meta.get("Artist", {}).get("value", "")) or "unknown author"
     license_name = strip_html(meta.get("LicenseShortName", {}).get("value", "")) or strip_html(meta.get("UsageTerms", {}).get("value", "license unknown"))
-    title_text = guess_search_term(type_code) + " reference"
-    caption = f"{guess_search_term(type_code)}. Auto-cached from Wikimedia Commons. Photo by {artist}, {license_name}."
+    title_text = search_term + " reference"
+    caption = f"{search_term}. Auto-cached from Wikimedia Commons. Photo by {artist}, {license_name}."
     source_url = f"https://commons.wikimedia.org/wiki/{quote(file_title.replace(' ', '_'), safe=':/_()')}"
     entry = {
         "asset": f"assets/aircraft/types/{filename}",

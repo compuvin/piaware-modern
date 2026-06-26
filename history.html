@@ -522,6 +522,16 @@
 					};
 				}
 
+				function assetImageSrc(asset) {
+					if (!asset || !asset.asset) {
+						return "";
+					}
+					if (!asset.cacheBust) {
+						return asset.asset;
+					}
+					return asset.asset + (asset.asset.indexOf("?") === -1 ? "?" : "&") + "v=" + encodeURIComponent(asset.cacheBust);
+				}
+
 				function loadAutoCacheIndex() {
 					return fetch("assets/aircraft/types/index.json", { cache: "no-cache" })
 						.then(function(response) {
@@ -550,7 +560,8 @@
 								autoCache[typeCode] = {
 									asset: payload.asset,
 									title: payload.title,
-									caption: payload.caption
+									caption: payload.caption,
+									cacheBust: Date.now()
 								};
 								if (selectedFlightId) {
 									updateHistoryThumbnail({ aircraft_type: typeCode });
@@ -589,9 +600,19 @@
 						return;
 					}
 
-					image.src = resolved.asset.asset;
+					image.onerror = function() {
+						if (resolved && resolved.type) {
+							delete typeAssets[resolved.type];
+							delete autoCache[resolved.type];
+							hideHistoryThumbnail();
+							requestTypeImage(resolved.type);
+						}
+					};
+					modalImage.onerror = image.onerror;
+
+					image.src = assetImageSrc(resolved.asset);
 					image.alt = resolved.asset.title;
-					modalImage.src = resolved.asset.asset;
+					modalImage.src = assetImageSrc(resolved.asset);
 					modalImage.alt = resolved.asset.title;
 					setText("history_thumbnail_title", resolved.asset.title);
 					setText("history_thumbnail_caption", resolved.asset.caption);

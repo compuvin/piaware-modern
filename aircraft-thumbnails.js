@@ -55,6 +55,16 @@
         return String(asset.title).replace(/\s+reference$/i, "").trim() || null;
     }
 
+    function assetImageSrc(asset) {
+        if (!asset || !asset.asset) {
+            return "";
+        }
+        if (!asset.cacheBust) {
+            return asset.asset;
+        }
+        return asset.asset + (asset.asset.indexOf("?") === -1 ? "?" : "&") + "v=" + encodeURIComponent(asset.cacheBust);
+    }
+
     function formatTypeDisplayForPlane(plane) {
         if (!plane || !plane.icaotype) {
             return "n/a";
@@ -158,7 +168,8 @@
                     AUTO_CACHE[type] = {
                         asset: payload.asset,
                         title: payload.title,
-                        caption: payload.caption
+                        caption: payload.caption,
+                        cacheBust: Date.now()
                     };
                     updateTypeDisplays();
                     updateThumbnail();
@@ -191,9 +202,19 @@
             return;
         }
 
-        thumbImage.src = asset.asset;
+        thumbImage.onerror = function() {
+            if (resolved && resolved.type) {
+                delete TYPE_ASSETS[resolved.type];
+                delete AUTO_CACHE[resolved.type];
+                container.classList.add("hidden");
+                requestAutoCache(resolved.type);
+            }
+        };
+        modalImage.onerror = thumbImage.onerror;
+
+        thumbImage.src = assetImageSrc(asset);
         thumbImage.alt = asset.title;
-        modalImage.src = asset.asset;
+        modalImage.src = assetImageSrc(asset);
         modalImage.alt = asset.title;
         setText("selected_aircraft_thumbnail_title", asset.title);
         setText("selected_aircraft_thumbnail_caption", asset.caption);
