@@ -1302,69 +1302,87 @@ class Handler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
+        path = parsed.path
 
-        if parsed.path == "/health":
+        if path == "/health":
             self._respond({"status": "ok", **self.store.summary()})
             return
 
-        if parsed.path == "/api/history/summary":
+        if path == "/api/history/summary":
             self._respond(self.store.summary())
             return
 
-        if parsed.path == "/api/history/stats":
+        if path == "/api/history/stats":
             self._respond(self.store.stats())
             return
 
-        if parsed.path == "/api/history/aircraft":
-            limit = max(1, min(int(params.get("limit", ["250"])[0]), 1000))
-            search = params.get("search", [""])[0].strip() or None
-            self._respond({"aircraft": self.store.list_aircraft(limit, search)})
+        if path == "/api/history/aircraft":
+            self._handle_aircraft(params)
             return
 
-        if parsed.path == "/api/history/types":
-            limit = max(1, min(int(params.get("limit", ["100"])[0]), 500))
-            search = params.get("search", [""])[0].strip() or None
-            self._respond({"types": self.store.list_aircraft_types(limit, search)})
+        if path == "/api/history/types":
+            self._handle_types(params)
             return
 
-        if parsed.path == "/api/history/flights":
-            icao = params.get("icao", [""])[0].strip().upper()
-            if not icao:
-                self._respond({"status": "error", "reason": "missing_icao"}, HTTPStatus.BAD_REQUEST)
+        if path == "/api/history/flights":
+            self._handle_flights(params)
+            return
+
+        if path == "/api/history/recent-paths":
+            self._handle_recent_paths(params)
+            return
+
+        if path.startswith("/api/history/flight/"):
+            self._handle_flight(path.removeprefix("/api/history/flight/"))
+            return
+
+        self._respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
+
+    def _handle_aircraft(self, params: dict[str, list[str]]) -> None:
+        limit = max(1, min(int(params.get("limit", ["250"])[0]), 1000))
+        search = params.get("search", [""])[0].strip() or None
+        self._respond({"aircraft": self.store.list_aircraft(limit, search)})
+
+    def _handle_types(self, params: dict[str, list[str]]) -> None:
+        limit = max(1, min(int(params.get("limit", ["100"])[0]), 500))
+        search = params.get("search", [""])[0].strip() or None
+        self._respond({"types": self.store.list_aircraft_types(limit, search)})
+
+    def _handle_flights(self, params: dict[str, list[str]]) -> None:
+        icao = params.get("icao", [""])[0].strip().upper()
+        if not icao:
+            self._respond({"status": "error", "reason": "missing_icao"}, HTTPStatus.BAD_REQUEST)
+            return
+        limit = max(1, min(int(params.get("limit", ["100"])[0]), 1000))
+        self._respond({"flights": self.store.list_flights(icao, limit)})
+
+    def _handle_recent_paths(self, params: dict[str, list[str]]) -> None:
+        hours = params.get("hours", [""])[0].strip()
+        days = params.get("days", [""])[0].strip()
+        limit = max(1, min(int(params.get("limit", ["2000"])[0]), 2000))
+        now_ts = utc_now()
+        if days:
+            since_ts = now_ts - int(float(days) * 86400)
+        else:
+            since_ts = now_ts - int(float(hours or "24") * 3600)
+        self._respond(self.store.get_recent_paths(since_ts, limit))
+
+    def _handle_flight(self, suffix: str) -> None:
+        if suffix.endswith("/path"):
+            flight_id_text = suffix.removesuffix("/path")
+            if not flight_id_text.isdigit():
+                self._respond({"status": "error", "reason": "invalid_flight_id"}, HTTPStatus.BAD_REQUEST)
                 return
-            limit = max(1, min(int(params.get("limit", ["100"])[0]), 1000))
-            self._respond({"flights": self.store.list_flights(icao, limit)})
+            self._respond(self.store.get_flight_path(int(flight_id_text)))
             return
 
-        if parsed.path == "/api/history/recent-paths":
-            hours = params.get("hours", [""])[0].strip()
-            days = params.get("days", [""])[0].strip()
-            limit = max(1, min(int(params.get("limit", ["2000"])[0]), 2000))
-            now_ts = utc_now()
-            if days:
-                since_ts = now_ts - int(float(days) * 86400)
-            else:
-                since_ts = now_ts - int(float(hours or "24") * 3600)
-            self._respond(self.store.get_recent_paths(since_ts, limit))
+        if suffix.isdigit():
+            flight = self.store.get_flight(int(suffix))
+            if not flight:
+                self._respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
+                return
+            self._respond({"flight": flight})
             return
-
-        if parsed.path.startswith("/api/history/flight/"):
-            suffix = parsed.path.removeprefix("/api/history/flight/")
-            if suffix.endswith("/path"):
-                flight_id_text = suffix.removesuffix("/path")
-                if not flight_id_text.isdigit():
-                    self._respond({"status": "error", "reason": "invalid_flight_id"}, HTTPStatus.BAD_REQUEST)
-                    return
-                self._respond(self.store.get_flight_path(int(flight_id_text)))
-                return
-
-            if suffix.isdigit():
-                flight = self.store.get_flight(int(suffix))
-                if not flight:
-                    self._respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
-                    return
-                self._respond({"flight": flight})
-                return
 
         self._respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
 
