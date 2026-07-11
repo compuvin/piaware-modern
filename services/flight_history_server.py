@@ -1090,6 +1090,37 @@ class FlightHistoryStore:
             rows = self.conn.execute(query, params).fetchall()
         return [self._enrich_row_metadata(dict(row)) for row in rows]
 
+    def list_aircraft_types(self, limit: int, search: str | None) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                aircraft_type,
+                description,
+                COUNT(*) AS aircraft_count,
+                MAX(last_seen_ts) AS last_seen_ts
+            FROM aircraft
+            WHERE aircraft_type IS NOT NULL
+              AND aircraft_type != ''
+        """
+        params: list[Any] = []
+        if search:
+            query += """
+              AND (
+                    aircraft_type LIKE ?
+                 OR description LIKE ?
+              )
+            """
+            wildcard = f"%{search.upper()}%"
+            params.extend([wildcard, wildcard])
+        query += """
+            GROUP BY aircraft_type, description
+            ORDER BY last_seen_ts DESC, aircraft_count DESC, aircraft_type ASC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self.lock:
+            rows = self.conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def list_flights(self, icao: str, limit: int) -> list[dict[str, Any]]:
         with self.lock:
             rows = self.conn.execute(
@@ -1288,6 +1319,12 @@ class Handler(BaseHTTPRequestHandler):
             limit = max(1, min(int(params.get("limit", ["250"])[0]), 1000))
             search = params.get("search", [""])[0].strip() or None
             self._respond({"aircraft": self.store.list_aircraft(limit, search)})
+            return
+
+        if parsed.path == "/api/history/types":
+            limit = max(1, min(int(params.get("limit", ["100"])[0]), 500))
+            search = params.get("search", [""])[0].strip() or None
+            self._respond({"types": self.store.list_aircraft_types(limit, search)})
             return
 
         if parsed.path == "/api/history/flights":

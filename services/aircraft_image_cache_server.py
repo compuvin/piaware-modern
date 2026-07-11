@@ -33,6 +33,8 @@ LOGGER = logging.getLogger("piaware-modern-aircraft-cache")
 
 
 TYPE_SEARCH = {}
+ALLOWED_COMMONS_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+REJECTED_COMMONS_SOURCE_EXTENSIONS = {".pdf", ".djvu", ".svg", ".tif", ".tiff", ".ogg", ".ogv", ".webm"}
 
 BAD_TITLE_WORDS = {
     "AIRPORT",
@@ -55,6 +57,18 @@ BAD_TITLE_WORDS = {
     "BUILDING",
     "MONUMENT",
     "SCULPTURE",
+    "PDF",
+    "DOCUMENT",
+    "REPORT",
+    "ANALYSIS",
+    "DETERMINANTS",
+    "TRAINING",
+    "PERFORMANCE",
+    "RETENTION",
+    "PROMOTION",
+    "LIEUTENANT",
+    "COMMANDER",
+    "OFFICERS",
 }
 
 AIRCRAFT_HINT_WORDS = {
@@ -260,16 +274,31 @@ def score_result(term: str, title: str) -> int:
         score += 2
     if any(word in title_words for word in BAD_TITLE_WORDS):
         score -= 40
-    if re.search(r"\b(ICAO|IATA|LOGO|MAP|PAGE|PARK)\b", title.upper()):
+    if re.search(r"\b(ICAO|IATA|LOGO|MAP|PAGE|PARK|PDF|REPORT|ANALYSIS|DOCUMENT)\b", title.upper()):
         score -= 20
     return score
 
 
+def commons_file_extension(title: str) -> str:
+    filename = title.removeprefix("File:").split("?", 1)[0].strip()
+    return Path(filename).suffix.lower()
+
+
 def is_plausible_aircraft_result(title: str) -> bool:
     title_words = set(re.findall(r"[A-Z0-9]+", title.upper()))
+    ext = commons_file_extension(title)
+    if ext in REJECTED_COMMONS_SOURCE_EXTENSIONS:
+        return False
+    if ext and ext not in ALLOWED_COMMONS_IMAGE_EXTENSIONS:
+        return False
     if any(word in title_words for word in BAD_TITLE_WORDS):
         return False
     return True
+
+
+def is_document_thumbnail_url(url: str) -> bool:
+    parsed_path = urlparse(url).path.lower()
+    return bool(re.search(r"\.(pdf|djvu|tiff?|svg)(/|$)", parsed_path)) or "/page1-" in parsed_path
 
 
 def search_commons_file(type_code: str, term: str) -> str | None:
@@ -330,20 +359,106 @@ def choose_extension(content_type: str, url: str) -> str:
     return suffix if suffix in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
 
 
-def resolve_type(type_code: str) -> dict[str, Any]:
+def clean_text(value: Any, max_length: int = 500) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()[:max_length]
+
+
+def display_name_from_title(title: str, type_code: str) -> str:
+    cleaned = clean_text(title, 120)
+    if cleaned:
+        return re.sub(r"\s+reference$", "", cleaned, flags=re.IGNORECASE).strip() or type_code
+    return type_code
+
+
+def entry_payload(type_code: str) -> dict[str, Any]:
     type_code = normalize_type(type_code)
-    log(f"[cache] request for type {type_code}")
+    with LOCK:
+        index = load_index()
+        entry = dict(index.get(type_code) or {})
+
+    asset = entry.get("asset")
+    asset_exists = bool(asset and (PROJECT_ROOT / asset).exists())
+    return {
+        "status": "ready",
+        "type": type_code,
+        "asset_exists": asset_exists,
+        "entry": entry,
+    }
+
+
+def save_type_entry(
+    type_code: str,
+    *,
+    title: str,
+    caption: str,
+    source_url: str = "",
+    file_title: str = "",
+    asset: str | None = None,
+) -> dict[str, Any]:
+    type_code = normalize_type(type_code)
+    title = clean_text(title, 160)
+    caption = clean_text(caption, 1000)
+    source_url = clean_text(source_url, 1000)
+    file_title = clean_text(file_title, 500)
+
+    if not title:
+        title = f"{type_code} reference"
 
     with LOCK:
         index = load_index()
-        existing = index.get(type_code)
-        if existing:
-            asset_path = PROJECT_ROOT / existing["asset"]
-            if asset_path.exists():
-                log(f"[cache] hit for {type_code}: {existing['asset']}")
-                return {"status": "ready", **existing}
+        existing = dict(index.get(type_code) or {})
+        entry = {
+            "asset": asset or existing.get("asset", ""),
+            "title": title,
+            "caption": caption,
+            "source_url": source_url or existing.get("source_url", ""),
+            "file_title": file_title or existing.get("file_title", ""),
+        }
+        index[type_code] = entry
+        save_index(index)
 
-    search_term = resolve_search_term(type_code)
+    log(f"[cache] saved metadata for {type_code}")
+    return {"status": "ready", "type": type_code, **entry}
+
+
+def download_image_to_cache(type_code: str, image_url: str) -> tuple[str, int]:
+    binary, content_type = download_binary(image_url)
+    if not content_type.startswith("image/"):
+        raise ValueError(f"URL did not return an image ({content_type})")
+
+    ext = choose_extension(content_type, image_url)
+    TYPE_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{type_code}{ext}"
+    target = TYPE_DIR / filename
+    target.write_bytes(binary)
+    return f"assets/aircraft/types/{filename}", len(binary)
+
+
+def resolve_type(type_code: str, *, refresh: bool = False) -> dict[str, Any]:
+    type_code = normalize_type(type_code)
+    log(f"[cache] request for type {type_code}")
+    existing: dict[str, Any] = {}
+
+    if not refresh:
+        with LOCK:
+            index = load_index()
+            existing = index.get(type_code)
+            if existing:
+                asset_path = PROJECT_ROOT / existing["asset"]
+                if asset_path.exists():
+                    log(f"[cache] hit for {type_code}: {existing['asset']}")
+                    return {"status": "ready", **existing}
+    else:
+        with LOCK:
+            index = load_index()
+            existing = dict(index.get(type_code) or {})
+        log(f"[cache] refresh requested for {type_code}")
+
+    search_term = display_name_from_title(existing.get("title", ""), type_code) if refresh else resolve_search_term(type_code)
+    if search_term == type_code:
+        search_term = resolve_search_term(type_code)
     file_title = search_commons_file(type_code, search_term)
     if not file_title:
         log(f"[cache] no Commons search result for {type_code}")
@@ -359,6 +474,9 @@ def resolve_type(type_code: str) -> dict[str, Any]:
     if not image_url:
         log(f"[cache] no image URL for {type_code} ({file_title})")
         return {"status": "missing", "reason": "no_image_url"}
+    if not is_plausible_aircraft_result(file_title) or is_document_thumbnail_url(image_url):
+        log(f"[cache] rejected non-aircraft/document image for {type_code}: {file_title}")
+        return {"status": "missing", "reason": "rejected_document_or_non_aircraft_image"}
 
     log(f"[cache] downloading {type_code} from {image_url}")
     binary, content_type = download_binary(image_url)
@@ -372,8 +490,8 @@ def resolve_type(type_code: str) -> dict[str, Any]:
     meta = info.get("extmetadata", {})
     artist = strip_html(meta.get("Artist", {}).get("value", "")) or "unknown author"
     license_name = strip_html(meta.get("LicenseShortName", {}).get("value", "")) or strip_html(meta.get("UsageTerms", {}).get("value", "license unknown"))
-    title_text = search_term + " reference"
-    caption = f"{search_term}. Auto-cached from Wikimedia Commons. Photo by {artist}, {license_name}."
+    title_text = existing.get("title") if refresh and existing.get("title") else search_term + " reference"
+    caption = existing.get("caption") if refresh and existing.get("caption") else f"{search_term}. Auto-cached from Wikimedia Commons. Photo by {artist}, {license_name}."
     source_url = f"https://commons.wikimedia.org/wiki/{quote(file_title.replace(' ', '_'), safe=':/_()')}"
     entry = {
         "asset": f"assets/aircraft/types/{filename}",
@@ -395,7 +513,7 @@ def resolve_type(type_code: str) -> dict[str, Any]:
 class Handler(BaseHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
@@ -405,7 +523,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/resolve":
+        if parsed.path not in {"/resolve", "/entry"}:
             self.respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
             return
 
@@ -416,8 +534,57 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            payload = resolve_type(type_code)
+            refresh = params.get("refresh", [""])[0].strip().lower() in {"1", "true", "yes"}
+            payload = entry_payload(type_code) if parsed.path == "/entry" else resolve_type(type_code, refresh=refresh)
             self.respond(payload)
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_GATEWAY)
+        except Exception as exc:  # pragma: no cover
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path not in {"/entry", "/download"}:
+            self.respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            payload = self.read_json_body()
+            type_code = normalize_type(payload.get("type", ""))
+            if not type_code:
+                self.respond({"status": "error", "reason": "missing_type"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            if parsed.path == "/entry":
+                self.respond(
+                    save_type_entry(
+                        type_code,
+                        title=payload.get("title", ""),
+                        caption=payload.get("caption", ""),
+                        source_url=payload.get("source_url", ""),
+                        file_title=payload.get("file_title", ""),
+                    )
+                )
+                return
+
+            image_url = clean_text(payload.get("image_url", ""), 1000)
+            if not image_url:
+                self.respond({"status": "error", "reason": "missing_image_url"}, HTTPStatus.BAD_REQUEST)
+                return
+            asset, byte_count = download_image_to_cache(type_code, image_url)
+            display_name = display_name_from_title(payload.get("title", ""), type_code)
+            entry = save_type_entry(
+                type_code,
+                title=payload.get("title", "") or f"{display_name} reference",
+                caption=payload.get("caption", ""),
+                source_url=payload.get("source_url", "") or image_url,
+                file_title=payload.get("file_title", ""),
+                asset=asset,
+            )
+            log(f"[cache] downloaded custom image for {type_code} from {image_url} ({byte_count} bytes)")
+            self.respond(entry)
+        except ValueError as exc:
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_REQUEST)
         except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
             self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_GATEWAY)
         except Exception as exc:  # pragma: no cover
@@ -433,6 +600,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        if length > 64 * 1024:
+            raise ValueError("request body too large")
+        body = self.rfile.read(length)
+        payload = json.loads(body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON body must be an object")
+        return payload
 
 
 def main() -> None:

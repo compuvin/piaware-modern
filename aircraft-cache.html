@@ -1,0 +1,493 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#09131d" />
+		<link rel="stylesheet" href="jquery/jquery-ui-1.11.4-smoothness.css" />
+		<link rel="icon" href="favicon.ico" />
+		<link rel="stylesheet" type="text/css" href="modern-ui.css?v=1.1" />
+		<script src="jquery/jquery-3.0.0.min.js"></script>
+		<script>
+			(function() {
+				window.MODERN_DIRECT_SERVICE_HOST = "piaware.local";
+				window.MODERN_HISTORY_API_BASE = "/history-api";
+				window.MODERN_IMAGE_CACHE_API_BASE = "/image-cache";
+			})();
+		</script>
+		<title>PiAware SkyAware Edit Aircraft</title>
+		<style>
+			html,
+			body {
+				height: auto;
+				min-height: 100dvh;
+				overflow-x: hidden;
+				overflow-y: auto;
+			}
+			.cacheShell {
+				height: auto;
+				min-height: 100dvh;
+			}
+			.cacheLayout {
+				display: grid;
+				grid-template-columns: minmax(340px, 0.8fr) minmax(420px, 1.2fr);
+				gap: 18px;
+				padding: 18px;
+				box-sizing: border-box;
+				min-height: calc(100dvh - var(--header-h));
+			}
+			.cachePanel {
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg);
+				background: var(--bg-elevated);
+				backdrop-filter: blur(18px);
+				box-shadow: var(--shadow);
+				padding: 16px;
+				min-width: 0;
+			}
+			.cachePanelTitle {
+				margin: 0 0 12px;
+				color: var(--accent-strong);
+				font-size: 12px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+			.cacheField {
+				margin-bottom: 12px;
+			}
+			.cacheLabel {
+				display: block;
+				margin-bottom: 6px;
+				color: var(--muted);
+				font-size: 11px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+			.cacheInput,
+			.cacheTextarea {
+				width: 100%;
+				box-sizing: border-box;
+				border: 1px solid rgba(255,255,255,0.12);
+				border-radius: 12px;
+				background: rgba(8, 17, 26, 0.72);
+				color: var(--text);
+				font: inherit;
+				padding: 10px 12px;
+			}
+			.cacheTextarea {
+				min-height: 110px;
+				resize: vertical;
+			}
+			.cacheTypeRow,
+			.cacheButtonRow {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+			}
+			.cacheTypeRow .cacheInput {
+				text-transform: uppercase;
+			}
+			.cacheButtonRow {
+				flex-wrap: wrap;
+				margin-top: 12px;
+			}
+			.cacheHint {
+				margin-top: 6px;
+				color: var(--muted);
+				font-size: 12px;
+				line-height: 1.4;
+			}
+			.cacheStatus {
+				margin-top: 14px;
+				padding: 10px 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 12px;
+				background: rgba(255,255,255,0.03);
+				color: var(--muted);
+				font-size: 13px;
+				line-height: 1.4;
+				white-space: pre-wrap;
+			}
+			.cacheImageBox {
+				display: grid;
+				place-items: center;
+				min-height: 320px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 18px;
+				background: rgba(255,255,255,0.03);
+				overflow: hidden;
+			}
+			.cacheImage {
+				display: block;
+				max-width: 100%;
+				max-height: 60dvh;
+				object-fit: contain;
+			}
+			.cacheImageEmpty {
+				color: var(--muted);
+				font-size: 13px;
+				padding: 28px;
+				text-align: center;
+			}
+			.cacheMeta {
+				margin-top: 12px;
+				color: var(--muted);
+				font-size: 12px;
+				line-height: 1.5;
+				word-break: break-word;
+			}
+			@media (max-width: 980px) {
+				.cacheLayout {
+					grid-template-columns: 1fr;
+				}
+			}
+		</style>
+	</head>
+	<body class="modern-shell cacheShell">
+		<div id="header" class="infoHeading">
+			<div class="logoContainer">
+				<a href="http://flightaware.com/" target="_blank"><img src="images/fa_logo_color.png" alt="FlightAware" class="flightawareLogo"></a>
+				<div class="modernBrandCopy">
+					<div class="modernEyebrow">Edit Aircraft</div>
+					<div class="modernHeadline">Correct aircraft type names, captions, and reference images.</div>
+				</div>
+			</div>
+			<div class="menuContainer">
+				<div class="dateTime" id="clock_div"></div>
+				<div class="buttonContainer">
+					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
+					<a class="button buttonHeader" href="aircraft-cache.html"><span class="buttonText">Edit Aircraft</span></a>
+					<a class="button buttonHeader" href="history.html"><span class="buttonText">History</span></a>
+					<a class="button buttonHeader" href="history-stats.html"><span class="buttonText">History Stats</span></a>
+				</div>
+				<button type="button" class="navToggle" onclick="$('body').toggleClass('navOpen')"><span></span></button>
+			</div>
+		</div>
+
+		<div class="cacheLayout">
+			<section class="cachePanel">
+				<h2 class="cachePanelTitle">Aircraft Type</h2>
+				<div class="cacheField">
+					<label class="cacheLabel" for="type_code">ICAO Type Code</label>
+					<div class="cacheTypeRow">
+						<input id="type_code" class="cacheInput" type="text" list="type_suggestions" maxlength="8" placeholder="C208">
+						<datalist id="type_suggestions"></datalist>
+						<button id="load_button" class="button buttonHeader" type="button"><span class="buttonText">Load</span></button>
+					</div>
+					<div class="cacheHint">Start typing a type code to see aircraft types already seen in history.</div>
+				</div>
+
+				<div class="cacheField">
+					<label class="cacheLabel" for="aircraft_name">Name</label>
+					<input id="aircraft_name" class="cacheInput" type="text" placeholder="Cessna 208 Caravan">
+				</div>
+
+				<div class="cacheField">
+					<label class="cacheLabel" for="caption">Caption</label>
+					<textarea id="caption" class="cacheTextarea" placeholder="Cessna 208 Caravan. Photo by ..., license."></textarea>
+				</div>
+
+				<div class="cacheField">
+					<label class="cacheLabel" for="source_url">Source URL</label>
+					<input id="source_url" class="cacheInput" type="url" placeholder="https://commons.wikimedia.org/wiki/File:...">
+				</div>
+
+				<div class="cacheField">
+					<label class="cacheLabel" for="file_title">File Title</label>
+					<input id="file_title" class="cacheInput" type="text" placeholder="File:Example.jpg">
+				</div>
+
+				<div class="cacheButtonRow">
+					<button id="save_button" class="button buttonHeader" type="button"><span class="buttonText">Save Details</span></button>
+					<button id="search_button" class="button buttonHeader" type="button"><span class="buttonText">Search Image & Save</span></button>
+					<button id="close_button" class="button buttonHeader" type="button"><span class="buttonText">Close</span></button>
+				</div>
+				<div id="status" class="cacheStatus">Enter an ICAO type code and load its cache entry.</div>
+			</section>
+
+			<section class="cachePanel">
+				<h2 class="cachePanelTitle">Image</h2>
+				<div class="cacheImageBox">
+					<img id="cache_image" class="cacheImage hidden" alt="">
+					<div id="image_empty" class="cacheImageEmpty">No cached image loaded.</div>
+				</div>
+				<div id="image_meta" class="cacheMeta"></div>
+
+				<div class="cacheField" style="margin-top: 18px;">
+					<label class="cacheLabel" for="image_url">Direct Image URL</label>
+					<input id="image_url" class="cacheInput" type="url" placeholder="https://example.com/aircraft.jpg">
+					<div class="cacheHint">Direct download stores the image in the local cache and saves the current details.</div>
+				</div>
+
+				<div class="cacheButtonRow">
+					<button id="download_button" class="button buttonHeader" type="button"><span class="buttonText">Download URL & Save</span></button>
+				</div>
+			</section>
+		</div>
+
+		<script>
+			(function() {
+				var historyPort = "8766";
+				var cachePort = "8765";
+				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
+				var historyApiBases = [window.MODERN_HISTORY_API_BASE || ""];
+				var imageCacheApiBases = [window.MODERN_IMAGE_CACHE_API_BASE || ""];
+				var suggestionTimer = null;
+				var loadedName = "";
+				var loadedCaption = "";
+
+				function el(id) {
+					return document.getElementById(id);
+				}
+
+				function setStatus(message) {
+					el("status").textContent = message;
+				}
+
+				function setClock() {
+					el("clock_div").textContent = new Date().toLocaleString();
+				}
+
+				function normalizeType(value) {
+					return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+				}
+
+				function buildServiceUrls(path, bases, port) {
+					var urls = [];
+					urls.push((window.location.protocol || "http:") + "//" + directServiceHost + ":" + port + path);
+					(bases || []).forEach(function(base) {
+						var trimmed = (base || "").replace(/\/+$/, "");
+						if (trimmed) {
+							urls.push(trimmed + path);
+						}
+					});
+					return urls.filter(function(url, index, arr) {
+						return arr.indexOf(url) === index;
+					});
+				}
+
+				function fetchJsonWithFallback(urls, optionsFactory) {
+					var remaining = (urls || []).slice();
+					function attempt() {
+						if (!remaining.length) {
+							return Promise.reject(new Error("all fetch attempts failed"));
+						}
+						var options = optionsFactory ? optionsFactory() : undefined;
+						return fetch(remaining.shift(), options)
+							.then(function(response) {
+								if (!response.ok) {
+									throw new Error("request failed");
+								}
+								return response.json();
+							})
+							.catch(function() {
+								return attempt();
+							});
+					}
+					return attempt();
+				}
+
+				function historyUrls(path) {
+					return buildServiceUrls(path, historyApiBases, historyPort);
+				}
+
+				function cacheUrls(path) {
+					return buildServiceUrls(path, imageCacheApiBases, cachePort);
+				}
+
+				function postJson(path, payload) {
+					var encoded = JSON.stringify(payload || {});
+					return fetchJsonWithFallback(cacheUrls(path), function() {
+						return {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: encoded
+						};
+					});
+				}
+
+				function nameFromTitle(title, typeCode) {
+					return String(title || "").replace(/\s+reference$/i, "").trim() || typeCode || "";
+				}
+
+				function titleFromName(name, typeCode) {
+					var cleaned = String(name || "").trim() || typeCode;
+					return /\s+reference$/i.test(cleaned) ? cleaned : cleaned + " reference";
+				}
+
+				function currentType() {
+					var typeCode = normalizeType(el("type_code").value);
+					el("type_code").value = typeCode;
+					return typeCode;
+				}
+
+				function currentPayload() {
+					var typeCode = currentType();
+					return {
+						type: typeCode,
+						title: titleFromName(el("aircraft_name").value, typeCode),
+						caption: el("caption").value.trim(),
+						source_url: el("source_url").value.trim(),
+						file_title: el("file_title").value.trim()
+					};
+				}
+
+				function showImage(entry, assetExists) {
+					var image = el("cache_image");
+					var empty = el("image_empty");
+					var meta = el("image_meta");
+					if (entry && entry.asset && assetExists) {
+						image.src = entry.asset + (entry.asset.indexOf("?") === -1 ? "?" : "&") + "v=" + Date.now();
+						image.alt = entry.title || "";
+						image.classList.remove("hidden");
+						empty.classList.add("hidden");
+					} else {
+						image.removeAttribute("src");
+						image.classList.add("hidden");
+						empty.classList.remove("hidden");
+					}
+					meta.textContent = entry && entry.asset ? "Asset: " + entry.asset : "";
+				}
+
+				function applyEntry(payload) {
+					var typeCode = payload.type || currentType();
+					var entry = payload.entry || payload;
+					el("type_code").value = typeCode;
+					el("aircraft_name").value = nameFromTitle(entry.title, typeCode);
+					el("caption").value = entry.caption || "";
+					el("source_url").value = entry.source_url || "";
+					el("file_title").value = entry.file_title || "";
+					loadedName = el("aircraft_name").value;
+					loadedCaption = el("caption").value;
+					showImage(entry, payload.asset_exists !== false && !!entry.asset);
+				}
+
+				function loadEntry() {
+					var typeCode = currentType();
+					if (!typeCode) {
+						setStatus("Enter an ICAO type code first.");
+						return Promise.resolve();
+					}
+					setStatus("Loading " + typeCode + "...");
+					return fetchJsonWithFallback(cacheUrls("/entry?type=" + encodeURIComponent(typeCode)))
+						.then(function(payload) {
+							applyEntry(payload);
+							setStatus(payload.entry && payload.entry.title ? "Loaded " + typeCode + "." : "No cache entry exists yet for " + typeCode + ".");
+						})
+						.catch(function(error) {
+							setStatus("Load failed: " + error.message);
+						});
+				}
+
+				function saveDetails() {
+					var payload = currentPayload();
+					if (!payload.type) {
+						setStatus("Enter an ICAO type code first.");
+						return;
+					}
+					setStatus("Saving " + payload.type + "...");
+					postJson("/entry", payload)
+						.then(function(result) {
+							applyEntry(result);
+							setStatus("Saved details for " + payload.type + ".");
+						})
+						.catch(function(error) {
+							setStatus("Save failed: " + error.message);
+						});
+				}
+
+				function searchAndSave() {
+					var payload = currentPayload();
+					if (!payload.type) {
+						setStatus("Enter an ICAO type code first.");
+						return;
+					}
+					setStatus("Saving details for " + payload.type + "...");
+					postJson("/entry", payload)
+						.then(function() {
+							setStatus("Triggering normal image cache lookup for " + payload.type + "...");
+							return fetchJsonWithFallback(cacheUrls("/resolve?type=" + encodeURIComponent(payload.type) + "&refresh=1"));
+						})
+						.then(function(result) {
+							if (result.status !== "ready") {
+								setStatus("Image cache lookup did not return an image: " + (result.reason || "unknown reason"));
+								return;
+							}
+							applyEntry(result);
+							setStatus("Saved details and ran the normal image cache lookup for " + payload.type + ".");
+						})
+						.catch(function(error) {
+							setStatus("Image lookup failed: " + error.message);
+						});
+				}
+
+				function downloadAndSave() {
+					var payload = currentPayload();
+					payload.image_url = el("image_url").value.trim();
+					if (!payload.type) {
+						setStatus("Enter an ICAO type code first.");
+						return;
+					}
+					if (!payload.image_url) {
+						setStatus("Enter a direct image URL first.");
+						return;
+					}
+					setStatus("Downloading image for " + payload.type + "...");
+					postJson("/download", payload)
+						.then(function(result) {
+							applyEntry(result);
+							setStatus("Downloaded image and saved details for " + payload.type + ".");
+						})
+						.catch(function(error) {
+							setStatus("Download failed: " + error.message);
+						});
+				}
+
+				function loadSuggestions() {
+					var search = normalizeType(el("type_code").value);
+					if (!search) {
+						el("type_suggestions").innerHTML = "";
+						return;
+					}
+					fetchJsonWithFallback(historyUrls("/api/history/types?limit=25&search=" + encodeURIComponent(search)))
+						.then(function(payload) {
+							var html = "";
+							(payload.types || []).forEach(function(item) {
+								var label = item.aircraft_type + " · " + Number(item.aircraft_count || 0).toLocaleString() + " aircraft";
+								html += '<option value="' + String(item.aircraft_type || "").replace(/"/g, "&quot;") + '" label="' + label.replace(/"/g, "&quot;") + '"></option>';
+							});
+							el("type_suggestions").innerHTML = html;
+						})
+						.catch(function() {
+							return null;
+						});
+				}
+
+				el("load_button").addEventListener("click", loadEntry);
+				el("save_button").addEventListener("click", saveDetails);
+				el("search_button").addEventListener("click", searchAndSave);
+				el("close_button").addEventListener("click", function() {
+					if (window.history.length > 1) {
+						window.history.back();
+					} else {
+						window.location.href = "history.html";
+					}
+				});
+				el("download_button").addEventListener("click", downloadAndSave);
+				el("type_code").addEventListener("input", function() {
+					clearTimeout(suggestionTimer);
+					suggestionTimer = setTimeout(loadSuggestions, 180);
+				});
+				el("type_code").addEventListener("keydown", function(event) {
+					if (event.key === "Enter") {
+						loadEntry();
+					}
+				});
+				setClock();
+				setInterval(setClock, 1000);
+			})();
+		</script>
+	</body>
+</html>
