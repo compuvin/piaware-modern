@@ -338,8 +338,6 @@ PlaneObject.prototype.getDataSource = function() {
 
     // Otherwise Mode S
     return 'mode_s';
-
-    // TODO: add support for Mode A/C
 };
 
 PlaneObject.prototype.getMarkerColor = function() {

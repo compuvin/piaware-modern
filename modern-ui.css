@@ -1040,6 +1040,10 @@ dd {
     margin-bottom: 16px;
 }
 
+#filter_panel .group {
+    display: flow-root;
+}
+
 .group:last-child {
     margin-bottom: 0;
 }
@@ -1055,6 +1059,7 @@ dd {
 }
 
 #planes_table_container {
+    clear: both;
     min-height: 0;
 }
 
@@ -1139,13 +1144,16 @@ dd {
     bottom: 18px;
     top: auto !important;
     width: auto;
-    height: min(62vh, 560px);
+    height: min(42vh, 380px);
+    max-height: min(42vh, 380px);
+    min-height: 180px;
     padding-top: 28px;
     background: rgba(7, 15, 23, 0.96);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
+    z-index: 5;
 }
 
 #selected_infoblock .infoHeading {

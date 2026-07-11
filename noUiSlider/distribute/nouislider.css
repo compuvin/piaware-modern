@@ -18,9 +18,12 @@
 }
 .noUi-target {
   position: relative;
+  background: #FAFAFA;
+  border-radius: 4px;
+  border: 1px solid #D3D3D3;
+  box-shadow: inset 0 1px 1px #F0F0F0, 0 3px 6px -5px #BBB;
 }
-.noUi-base,
-.noUi-connects {
+.noUi-base {
   width: 100%;
   height: 100%;
   position: relative;
@@ -29,8 +32,12 @@
 /* Wrapper for all connect elements.
  */
 .noUi-connects {
+  width: 100%;
+  height: 100%;
+  position: relative;
   overflow: hidden;
   z-index: 0;
+  border-radius: 3px;
 }
 .noUi-connect,
 .noUi-origin {
@@ -48,6 +55,7 @@
 .noUi-connect {
   height: 100%;
   width: 100%;
+  background: #3FB8AF;
 }
 .noUi-origin {
   height: 10%;
@@ -72,6 +80,11 @@
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   position: absolute;
+  border: 1px solid #D9D9D9;
+  border-radius: 3px;
+  background: #FFF;
+  cursor: default;
+  box-shadow: inset 0 0 1px #FFF, inset 0 1px 7px #EBEBEB, 0 3px 6px -3px #BBB;
 }
 .noUi-touch-area {
   height: 100%;
@@ -112,18 +125,6 @@
 /* Styling;
  * Giving the connect element a border radius causes issues with using transform: scale
  */
-.noUi-target {
-  background: #FAFAFA;
-  border-radius: 4px;
-  border: 1px solid #D3D3D3;
-  box-shadow: inset 0 1px 1px #F0F0F0, 0 3px 6px -5px #BBB;
-}
-.noUi-connects {
-  border-radius: 3px;
-}
-.noUi-connect {
-  background: #3FB8AF;
-}
 /* Handles and cursors;
  */
 .noUi-draggable {
@@ -131,13 +132,6 @@
 }
 .noUi-vertical .noUi-draggable {
   cursor: ns-resize;
-}
-.noUi-handle {
-  border: 1px solid #D9D9D9;
-  border-radius: 3px;
-  background: #FFF;
-  cursor: default;
-  box-shadow: inset 0 0 1px #FFF, inset 0 1px 7px #EBEBEB, 0 3px 6px -3px #BBB;
 }
 .noUi-active {
   box-shadow: inset 0 0 1px #FFF, inset 0 1px 7px #DDD, 0 3px 6px -3px #BBB;

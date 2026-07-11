@@ -333,11 +333,11 @@ var LayerSwitcher = function (_Control) {
             }).reverse();
             // console.log(groups.map(g => g.get('title')));
             groups.forEach(function (group) {
-                // TODO Can we use getLayersArray, is it public in the esm build?
-                var descendantVisibility = group.getLayersArray().map(function (l) {
+                var descendantVisibility = [];
+                LayerSwitcher.forEachRecursive(group, function (l) {
                     var state = l.getVisible();
                     // console.log('>', l.get('title'), state);
-                    return state;
+                    descendantVisibility.push(state);
                 });
                 // console.log(descendantVisibility);
                 if (descendantVisibility.every(function (v) {
