@@ -276,9 +276,8 @@ PlaneObject.prototype.updateTrack = function(receiver_timestamp, last_timestamp)
         if ( (lastseg.ground && this.altitude !== "ground") ||
              (!lastseg.ground && this.altitude === "ground") || this.altitude !== lastseg.altitude ) {
                 //console.log(this.icao + " ground state changed");
-                // Create a new segment as the ground state changed.
-                // assume the state changed halfway between the two points
-                // FIXME needs reimplementing post-google
+                // Create a new segment from the previous point as the ground
+                // state or altitude changed.
 
                 lastseg.fixed.appendCoordinate(projPrev);
                 this.track_linesegs.push({ fixed: new ol.geom.LineString([projPrev]),
@@ -703,7 +702,6 @@ PlaneObject.prototype.clearMarker = function() {
         if (this.marker) {
                 PlaneIconFeatures.remove(this.marker);
                 PlaneIconFeatures.remove(this.markerStatic);
-                /* FIXME google.maps.event.clearListeners(this.marker, 'click'); */
                 this.marker = this.markerStatic = null;
         }
 };
