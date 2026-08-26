@@ -1,0 +1,376 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#09131d" />
+		<link rel="stylesheet" href="jquery/jquery-ui-1.11.4-smoothness.css" />
+		<link rel="icon" href="favicon.ico" />
+		<link rel="stylesheet" type="text/css" href="modern-ui.css?v=1.1" />
+		<script src="jquery/jquery-3.0.0.min.js"></script>
+		<script>
+			(function() {
+				window.MODERN_DIRECT_SERVICE_HOST = "piaware.local";
+				window.MODERN_IMAGE_CACHE_API_BASE = "/image-cache";
+			})();
+		</script>
+		<title>PiAware SkyAware Admin</title>
+		<style>
+			html,
+			body {
+				height: auto;
+				min-height: 100dvh;
+				overflow-x: hidden;
+				overflow-y: auto;
+			}
+			.adminShell {
+				height: auto;
+				min-height: 100dvh;
+			}
+			.adminLayout {
+				display: grid;
+				grid-template-columns: minmax(340px, 680px);
+				gap: 18px;
+				padding: 18px;
+				box-sizing: border-box;
+				min-height: calc(100dvh - var(--header-h));
+			}
+			.adminLayout.hidden {
+				display: none;
+			}
+			.adminPanel {
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg);
+				background: var(--bg-elevated);
+				backdrop-filter: blur(18px);
+				box-shadow: var(--shadow);
+				padding: 16px;
+				min-width: 0;
+			}
+			.adminPanelTitle {
+				margin: 0 0 12px;
+				color: var(--accent-strong);
+				font-size: 12px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+			.adminSection {
+				margin-top: 14px;
+				padding-top: 14px;
+				border-top: 1px solid rgba(255,255,255,0.08);
+			}
+			.adminSectionTitle {
+				margin: 0 0 12px;
+				color: var(--text);
+				font-size: 14px;
+				font-weight: 700;
+			}
+			.adminField {
+				margin-bottom: 12px;
+			}
+			.adminLabel {
+				display: block;
+				margin-bottom: 6px;
+				color: var(--muted);
+				font-size: 11px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+			.adminInput {
+				width: 100%;
+				box-sizing: border-box;
+				border: 1px solid rgba(255,255,255,0.12);
+				border-radius: 12px;
+				background: rgba(8, 17, 26, 0.72);
+				color: var(--text);
+				font: inherit;
+				padding: 10px 12px;
+			}
+			.adminButtonRow {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+				flex-wrap: wrap;
+				margin-top: 12px;
+			}
+			.adminHint {
+				margin-top: 6px;
+				color: var(--muted);
+				font-size: 12px;
+				line-height: 1.4;
+			}
+			.adminStatus {
+				margin-top: 14px;
+				padding: 10px 12px;
+				border: 1px solid rgba(255,255,255,0.08);
+				border-radius: 12px;
+				background: rgba(255,255,255,0.03);
+				color: var(--muted);
+				font-size: 13px;
+				line-height: 1.4;
+				white-space: pre-wrap;
+			}
+		</style>
+	</head>
+	<body class="modern-shell adminShell">
+		<div id="header" class="infoHeading">
+			<div class="logoContainer">
+				<a href="http://flightaware.com/" target="_blank"><img src="images/fa_logo_color.png" alt="FlightAware" class="flightawareLogo"></a>
+				<div class="modernBrandCopy">
+					<div class="modernEyebrow">Admin</div>
+					<div class="modernHeadline">Manage administrative settings.</div>
+				</div>
+			</div>
+			<div class="menuContainer">
+				<div class="dateTime" id="clock_div"></div>
+				<div class="buttonContainer">
+					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
+					<a class="button buttonHeader" href="aircraft-cache.html"><span class="buttonText">Edit Aircraft</span></a>
+					<a class="button buttonHeader" href="admin.html"><span class="buttonText">Admin</span></a>
+					<a class="button buttonHeader" href="history.html"><span class="buttonText">History</span></a>
+					<a class="button buttonHeader" href="history-stats.html"><span class="buttonText">History Stats</span></a>
+				</div>
+				<button type="button" class="navToggle" onclick="$('body').toggleClass('navOpen')"><span></span></button>
+			</div>
+		</div>
+
+		<div id="login_panel" class="adminLayout">
+			<section class="adminPanel">
+				<h2 class="adminPanelTitle">Admin Login</h2>
+				<div class="adminHint" id="default_password_hint"></div>
+				<div class="adminField">
+					<label class="adminLabel" for="admin_password">Password</label>
+					<input id="admin_password" class="adminInput" type="password" autocomplete="current-password">
+				</div>
+				<div class="adminButtonRow">
+					<button id="login_button" class="button buttonHeader" type="button"><span class="buttonText">Log In</span></button>
+				</div>
+				<div id="login_status" class="adminStatus">Log in to access administrative settings.</div>
+			</section>
+		</div>
+
+		<div id="admin_panel" class="adminLayout hidden">
+			<section class="adminPanel">
+				<h2 class="adminPanelTitle">Admin</h2>
+				<div class="adminSection">
+					<h3 class="adminSectionTitle">Change Admin Password</h3>
+					<div class="adminField">
+						<label class="adminLabel" for="new_password">Password</label>
+						<input id="new_password" class="adminInput" type="password" autocomplete="new-password">
+					</div>
+					<div class="adminField">
+						<label class="adminLabel" for="confirm_password">Confirm Password</label>
+						<input id="confirm_password" class="adminInput" type="password" autocomplete="new-password">
+						<div class="adminHint">Use at least 8 characters. Changing the password logs out existing sessions.</div>
+					</div>
+					<div class="adminButtonRow">
+						<button id="change_password_button" class="button buttonHeader" type="button"><span class="buttonText">Change Password</span></button>
+					</div>
+				</div>
+				<div id="status" class="adminStatus">Enter a new password.</div>
+				<div class="adminButtonRow">
+					<button id="logout_button" class="button buttonHeader" type="button"><span class="buttonText">Log Out</span></button>
+				</div>
+			</section>
+		</div>
+
+		<script>
+			(function() {
+				var cachePort = "8765";
+				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
+				var imageCacheApiBases = [window.MODERN_IMAGE_CACHE_API_BASE || ""];
+				var authToken = sessionStorage.getItem("aircraftCacheAdminToken") || "";
+
+				function el(id) {
+					return document.getElementById(id);
+				}
+
+				function setStatus(message) {
+					el("status").textContent = message;
+				}
+
+				function setLoginStatus(message) {
+					el("login_status").textContent = message;
+				}
+
+				function setClock() {
+					el("clock_div").textContent = new Date().toLocaleString();
+				}
+
+				function buildServiceUrls(path, bases, port) {
+					var urls = [];
+					urls.push((window.location.protocol || "http:") + "//" + directServiceHost + ":" + port + path);
+					(bases || []).forEach(function(base) {
+						var trimmed = (base || "").replace(/\/+$/, "");
+						if (trimmed) {
+							urls.push(trimmed + path);
+						}
+					});
+					return urls.filter(function(url, index, arr) {
+						return arr.indexOf(url) === index;
+					});
+				}
+
+				function cacheUrls(path) {
+					return buildServiceUrls(path, imageCacheApiBases, cachePort);
+				}
+
+				function fetchJsonWithFallback(urls, optionsFactory) {
+					var remaining = (urls || []).slice();
+					function attempt() {
+						if (!remaining.length) {
+							return Promise.reject(new Error("all fetch attempts failed"));
+						}
+						var options = optionsFactory ? optionsFactory() : undefined;
+						return fetch(remaining.shift(), options)
+							.then(function(response) {
+								if (!response.ok) {
+									throw new Error("request failed");
+								}
+								return response.json();
+							})
+							.catch(function() {
+								return attempt();
+							});
+					}
+					return attempt();
+				}
+
+				function authHeaders(headers) {
+					var result = headers || {};
+					if (authToken) {
+						result.Authorization = "Bearer " + authToken;
+					}
+					return result;
+				}
+
+				function postJson(path, payload) {
+					var encoded = JSON.stringify(payload || {});
+					return fetchJsonWithFallback(cacheUrls(path), function() {
+						return {
+							method: "POST",
+							headers: authHeaders({ "Content-Type": "application/json" }),
+							body: encoded
+						};
+					});
+				}
+
+				function loadAuthStatus() {
+					fetchJsonWithFallback(cacheUrls("/auth/status"))
+						.then(function(payload) {
+							el("default_password_hint").textContent = payload.default_password
+								? "The service is still using the default password. Change it now."
+								: "";
+						})
+						.catch(function() {
+							return null;
+						});
+				}
+
+				function showLogin() {
+					el("login_panel").classList.remove("hidden");
+					el("admin_panel").classList.add("hidden");
+				}
+
+				function showPasswordPanel() {
+					el("login_panel").classList.add("hidden");
+					el("admin_panel").classList.remove("hidden");
+				}
+
+				function login() {
+					var password = el("admin_password").value;
+					if (!password) {
+						setLoginStatus("Enter the shared password.");
+						return;
+					}
+					setLoginStatus("Logging in...");
+					fetchJsonWithFallback(cacheUrls("/auth/login"), function() {
+						return {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ password: password })
+						};
+					})
+						.then(function(payload) {
+							authToken = payload.token || "";
+							sessionStorage.setItem("aircraftCacheAdminToken", authToken);
+							el("admin_password").value = "";
+							showPasswordPanel();
+							setStatus(payload.default_password ? "Logged in with the default password. Enter a new password." : "Logged in. Enter a new password.");
+						})
+						.catch(function(error) {
+							setLoginStatus("Login failed: " + error.message);
+						});
+				}
+
+				function changePassword() {
+					var newPassword = el("new_password").value;
+					var confirmPassword = el("confirm_password").value;
+					if (!authToken) {
+						showLogin();
+						setLoginStatus("Log in before changing the password.");
+						return;
+					}
+					if (newPassword.length < 8) {
+						setStatus("The new password must be at least 8 characters.");
+						return;
+					}
+					if (newPassword !== confirmPassword) {
+						setStatus("The new password fields do not match.");
+						return;
+					}
+					setStatus("Changing password...");
+					postJson("/auth/password", {
+						new_password: newPassword
+					})
+						.then(function() {
+							authToken = "";
+							sessionStorage.removeItem("aircraftCacheAdminToken");
+							el("new_password").value = "";
+							el("confirm_password").value = "";
+							showLogin();
+							loadAuthStatus();
+							setLoginStatus("Password changed. Log in again with the new password.");
+						})
+						.catch(function(error) {
+							setStatus("Password change failed: " + error.message);
+						});
+				}
+
+				function logout() {
+					if (authToken) {
+						postJson("/auth/logout", {});
+					}
+					authToken = "";
+					sessionStorage.removeItem("aircraftCacheAdminToken");
+					showLogin();
+					setLoginStatus("Logged out.");
+				}
+
+				el("login_button").addEventListener("click", login);
+				el("change_password_button").addEventListener("click", changePassword);
+				el("logout_button").addEventListener("click", logout);
+				el("admin_password").addEventListener("keydown", function(event) {
+					if (event.key === "Enter") {
+						login();
+					}
+				});
+				el("confirm_password").addEventListener("keydown", function(event) {
+					if (event.key === "Enter") {
+						changePassword();
+					}
+				});
+				setClock();
+				setInterval(setClock, 1000);
+				loadAuthStatus();
+				if (authToken) {
+					showPasswordPanel();
+				} else {
+					showLogin();
+				}
+			})();
+		</script>
+	</body>
+</html>

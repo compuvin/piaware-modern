@@ -4,6 +4,7 @@ __pycache__/
 data/flight_history.sqlite3
 data/flight_history.sqlite3-shm
 data/flight_history.sqlite3-wal
+data/aircraft-admin-auth.json
 data/backups/
 assets/aircraft/types/
 logs/

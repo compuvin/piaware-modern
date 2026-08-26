@@ -36,6 +36,9 @@
 				box-sizing: border-box;
 				min-height: calc(100dvh - var(--header-h));
 			}
+			.cacheLayout.hidden {
+				display: none;
+			}
 			.cachePanel {
 				border: 1px solid var(--border);
 				border-radius: var(--radius-lg);
@@ -159,6 +162,7 @@
 				<div class="buttonContainer">
 					<a class="button buttonHeader" href="index.html"><span class="buttonText">Live View</span></a>
 					<a class="button buttonHeader" href="aircraft-cache.html"><span class="buttonText">Edit Aircraft</span></a>
+					<a class="button buttonHeader" href="admin.html"><span class="buttonText">Admin</span></a>
 					<a class="button buttonHeader" href="history.html"><span class="buttonText">History</span></a>
 					<a class="button buttonHeader" href="history-stats.html"><span class="buttonText">History Stats</span></a>
 				</div>
@@ -166,7 +170,22 @@
 			</div>
 		</div>
 
-		<div class="cacheLayout">
+		<div id="login_panel" class="cacheLayout">
+			<section class="cachePanel">
+				<h2 class="cachePanelTitle">Admin Login</h2>
+				<div class="cacheField">
+					<label class="cacheLabel" for="admin_password">Password</label>
+					<input id="admin_password" class="cacheInput" type="password" autocomplete="current-password">
+					<div id="default_password_hint" class="cacheHint hidden">This service is still using the default password. Change it from the Admin page after logging in.</div>
+				</div>
+				<div class="cacheButtonRow">
+					<button id="login_button" class="button buttonHeader" type="button"><span class="buttonText">Log In</span></button>
+				</div>
+				<div id="login_status" class="cacheStatus">Log in to edit aircraft details.</div>
+			</section>
+		</div>
+
+		<div id="edit_panel" class="cacheLayout hidden">
 			<section class="cachePanel">
 				<h2 class="cachePanelTitle">Aircraft Type</h2>
 				<div class="cacheField">
@@ -203,6 +222,7 @@
 					<button id="save_button" class="button buttonHeader" type="button"><span class="buttonText">Save Details</span></button>
 					<button id="search_button" class="button buttonHeader" type="button"><span class="buttonText">Search Image & Save</span></button>
 					<button id="close_button" class="button buttonHeader" type="button"><span class="buttonText">Close</span></button>
+					<button id="logout_button" class="button buttonHeader" type="button"><span class="buttonText">Log Out</span></button>
 				</div>
 				<div id="status" class="cacheStatus">Enter an ICAO type code and load its cache entry.</div>
 			</section>
@@ -237,6 +257,7 @@
 				var suggestionTimer = null;
 				var loadedName = "";
 				var loadedCaption = "";
+				var authToken = sessionStorage.getItem("aircraftCacheAdminToken") || "";
 
 				function el(id) {
 					return document.getElementById(id);
@@ -244,6 +265,10 @@
 
 				function setStatus(message) {
 					el("status").textContent = message;
+				}
+
+				function setLoginStatus(message) {
+					el("login_status").textContent = message;
 				}
 
 				function setClock() {
@@ -302,10 +327,83 @@
 					return fetchJsonWithFallback(cacheUrls(path), function() {
 						return {
 							method: "POST",
-							headers: { "Content-Type": "application/json" },
+							headers: authHeaders({ "Content-Type": "application/json" }),
 							body: encoded
 						};
 					});
+				}
+
+				function getJson(path) {
+					return fetchJsonWithFallback(cacheUrls(path), function() {
+						return { headers: authHeaders({}) };
+					});
+				}
+
+				function authHeaders(headers) {
+					var result = headers || {};
+					if (authToken) {
+						result.Authorization = "Bearer " + authToken;
+					}
+					return result;
+				}
+
+				function showLogin() {
+					el("login_panel").classList.remove("hidden");
+					el("edit_panel").classList.add("hidden");
+				}
+
+				function showEditor() {
+					el("login_panel").classList.add("hidden");
+					el("edit_panel").classList.remove("hidden");
+				}
+
+				function loadAuthStatus() {
+					fetchJsonWithFallback(cacheUrls("/auth/status"))
+						.then(function(payload) {
+							el("default_password_hint").classList.toggle("hidden", !payload.default_password);
+						})
+						.catch(function() {
+							return null;
+						});
+				}
+
+				function login() {
+					var password = el("admin_password").value;
+					if (!password) {
+						setLoginStatus("Enter the shared password.");
+						return;
+					}
+					setLoginStatus("Logging in...");
+					fetchJsonWithFallback(cacheUrls("/auth/login"), function() {
+						return {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ password: password })
+						};
+					})
+						.then(function(payload) {
+							authToken = payload.token || "";
+							sessionStorage.setItem("aircraftCacheAdminToken", authToken);
+							el("admin_password").value = "";
+							showEditor();
+							setStatus("Logged in. Enter an ICAO type code and load its cache entry.");
+							if (payload.default_password) {
+								setStatus("Logged in with the default password. Change it from the Admin page.");
+							}
+						})
+						.catch(function(error) {
+							setLoginStatus("Login failed: " + error.message);
+						});
+				}
+
+				function logout() {
+					if (authToken) {
+						postJson("/auth/logout", {});
+					}
+					authToken = "";
+					sessionStorage.removeItem("aircraftCacheAdminToken");
+					showLogin();
+					setLoginStatus("Logged out.");
 				}
 
 				function nameFromTitle(title, typeCode) {
@@ -371,7 +469,7 @@
 						return Promise.resolve();
 					}
 					setStatus("Loading " + typeCode + "...");
-					return fetchJsonWithFallback(cacheUrls("/entry?type=" + encodeURIComponent(typeCode)))
+					return getJson("/entry?type=" + encodeURIComponent(typeCode))
 						.then(function(payload) {
 							applyEntry(payload);
 							setStatus(payload.entry && payload.entry.title ? "Loaded " + typeCode + "." : "No cache entry exists yet for " + typeCode + ".");
@@ -408,7 +506,7 @@
 					postJson("/entry", payload)
 						.then(function() {
 							setStatus("Triggering normal image cache lookup for " + payload.type + "...");
-							return fetchJsonWithFallback(cacheUrls("/resolve?type=" + encodeURIComponent(payload.type) + "&refresh=1"));
+							return getJson("/resolve?type=" + encodeURIComponent(payload.type) + "&refresh=1");
 						})
 						.then(function(result) {
 							if (result.status !== "ready") {
@@ -466,6 +564,7 @@
 				}
 
 				el("load_button").addEventListener("click", loadEntry);
+				el("login_button").addEventListener("click", login);
 				el("save_button").addEventListener("click", saveDetails);
 				el("search_button").addEventListener("click", searchAndSave);
 				el("close_button").addEventListener("click", function() {
@@ -475,7 +574,13 @@
 						window.location.href = "history.html";
 					}
 				});
+				el("logout_button").addEventListener("click", logout);
 				el("download_button").addEventListener("click", downloadAndSave);
+				el("admin_password").addEventListener("keydown", function(event) {
+					if (event.key === "Enter") {
+						login();
+					}
+				});
 				el("type_code").addEventListener("input", function() {
 					clearTimeout(suggestionTimer);
 					suggestionTimer = setTimeout(loadSuggestions, 180);
@@ -487,6 +592,12 @@
 				});
 				setClock();
 				setInterval(setClock, 1000);
+				loadAuthStatus();
+				if (authToken) {
+					showEditor();
+				} else {
+					showLogin();
+				}
 			})();
 		</script>
 	</body>

@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import hmac
 import html
 import json
 import logging
 import os
 import re
+import secrets
 import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import TimedRotatingFileHandler
@@ -24,12 +29,18 @@ SERVICE_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVICE_ROOT.parent
 TYPE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 INDEX_PATH = TYPE_DIR / "index.json"
+AUTH_PATH = PROJECT_ROOT / "data" / "aircraft-admin-auth.json"
 DEFAULT_LOG_PATH = PROJECT_ROOT / "logs" / "aircraft-image-cache.log"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "piaware-modern-aircraft-cache/1.0"
 LOCK = threading.Lock()
+AUTH_LOCK = threading.Lock()
 LOGGER = logging.getLogger("piaware-modern-aircraft-cache")
+DEFAULT_ADMIN_PASSWORD = "changeme"
+PASSWORD_HASH_ITERATIONS = 260_000
+SESSION_TTL_SECONDS = 12 * 60 * 60
+SESSIONS: dict[str, float] = {}
 
 
 TYPE_SEARCH = {}
@@ -135,6 +146,121 @@ def save_index(index: dict[str, Any]) -> None:
     TYPE_DIR.mkdir(parents=True, exist_ok=True)
     with INDEX_PATH.open("w") as fh:
         json.dump(index, fh, indent=2, sort_keys=True)
+
+
+def hash_password(password: str, salt: bytes | None = None) -> dict[str, Any]:
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        PASSWORD_HASH_ITERATIONS,
+    )
+    return {
+        "algorithm": "pbkdf2_sha256",
+        "iterations": PASSWORD_HASH_ITERATIONS,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "hash": base64.b64encode(digest).decode("ascii"),
+    }
+
+
+def write_auth_config(config: dict[str, Any]) -> None:
+    AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with AUTH_PATH.open("w") as fh:
+        json.dump(config, fh, indent=2, sort_keys=True)
+    os.chmod(AUTH_PATH, 0o600)
+
+
+def ensure_auth_config() -> dict[str, Any]:
+    with AUTH_LOCK:
+        if AUTH_PATH.exists():
+            with AUTH_PATH.open() as fh:
+                return json.load(fh)
+
+        config = {
+            "password": hash_password(DEFAULT_ADMIN_PASSWORD),
+            "default_password": True,
+            "created_at": int(time.time()),
+        }
+        write_auth_config(config)
+        log("[cache] created default admin password; change it from admin.html")
+        return config
+
+
+def verify_password(password: str) -> bool:
+    config = ensure_auth_config()
+    password_config = config.get("password", {})
+    if password_config.get("algorithm") != "pbkdf2_sha256":
+        return False
+
+    try:
+        iterations = int(password_config.get("iterations", 0))
+        salt = base64.b64decode(password_config.get("salt", ""))
+        expected = base64.b64decode(password_config.get("hash", ""))
+    except (TypeError, ValueError):
+        return False
+
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return hmac.compare_digest(actual, expected)
+
+
+def set_admin_password(password: str) -> None:
+    password = str(password or "")
+    if len(password) < 8:
+        raise ValueError("password must be at least 8 characters")
+
+    with AUTH_LOCK:
+        config = {
+            "password": hash_password(password),
+            "default_password": False,
+            "updated_at": int(time.time()),
+        }
+        write_auth_config(config)
+        SESSIONS.clear()
+    log("[cache] admin password changed")
+
+
+def create_session() -> str:
+    token = secrets.token_urlsafe(32)
+    with AUTH_LOCK:
+        prune_sessions()
+        SESSIONS[token] = time.time() + SESSION_TTL_SECONDS
+    return token
+
+
+def prune_sessions() -> None:
+    now = time.time()
+    expired = [token for token, expires_at in SESSIONS.items() if expires_at <= now]
+    for token in expired:
+        SESSIONS.pop(token, None)
+
+
+def validate_session(token: str) -> bool:
+    if not token:
+        return False
+    with AUTH_LOCK:
+        prune_sessions()
+        expires_at = SESSIONS.get(token)
+        if not expires_at:
+            return False
+        SESSIONS[token] = time.time() + SESSION_TTL_SECONDS
+        return True
+
+
+def destroy_session(token: str) -> None:
+    if not token:
+        return
+    with AUTH_LOCK:
+        SESSIONS.pop(token, None)
+
+
+def auth_status() -> dict[str, Any]:
+    config = ensure_auth_config()
+    return {
+        "status": "ready",
+        "default_password": bool(config.get("default_password")),
+        "session_ttl_seconds": SESSION_TTL_SECONDS,
+    }
 
 
 def strip_html(value: str) -> str:
@@ -514,7 +640,7 @@ class Handler(BaseHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         super().end_headers()
 
     def do_OPTIONS(self) -> None:
@@ -523,18 +649,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/auth/status":
+            self.respond(auth_status())
+            return
+
         if parsed.path not in {"/resolve", "/entry"}:
             self.respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
             return
 
         params = parse_qs(parsed.query)
+        refresh = params.get("refresh", [""])[0].strip().lower() in {"1", "true", "yes"}
+        if parsed.path == "/entry" or refresh:
+            if not self.is_authorized():
+                self.respond({"status": "error", "reason": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+                return
+
         type_code = params.get("type", [""])[0]
         if not type_code:
             self.respond({"status": "error", "reason": "missing_type"}, HTTPStatus.BAD_REQUEST)
             return
 
         try:
-            refresh = params.get("refresh", [""])[0].strip().lower() in {"1", "true", "yes"}
             payload = entry_payload(type_code) if parsed.path == "/entry" else resolve_type(type_code, refresh=refresh)
             self.respond(payload)
         except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
@@ -544,8 +679,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/auth/login":
+            self.handle_login()
+            return
+        if parsed.path == "/auth/logout":
+            destroy_session(self.auth_token())
+            self.respond({"status": "ready"})
+            return
+        if parsed.path == "/auth/password":
+            self.handle_password_change()
+            return
+
         if parsed.path not in {"/entry", "/download"}:
             self.respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        if not self.is_authorized():
+            self.respond({"status": "error", "reason": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
             return
 
         try:
@@ -601,6 +750,48 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def auth_token(self) -> str:
+        value = self.headers.get("Authorization", "")
+        if value.lower().startswith("bearer "):
+            return value[7:].strip()
+        return ""
+
+    def is_authorized(self) -> bool:
+        return validate_session(self.auth_token())
+
+    def client_ip(self) -> str:
+        forwarded_for = self.headers.get("X-Forwarded-For", "")
+        address = forwarded_for.split(",", 1)[0].strip() if forwarded_for else self.client_address[0]
+        return re.sub(r"[^0-9A-Fa-f:.]", "", address) or "unknown"
+
+    def handle_login(self) -> None:
+        try:
+            payload = self.read_json_body()
+            password = str(payload.get("password", ""))
+            if not verify_password(password):
+                log(f"[cache] failed admin login from {self.client_ip()}")
+                self.respond({"status": "error", "reason": "invalid_password"}, HTTPStatus.UNAUTHORIZED)
+                return
+            self.respond({"status": "ready", "token": create_session(), **auth_status()})
+        except (ValueError, json.JSONDecodeError) as exc:
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:  # pragma: no cover
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def handle_password_change(self) -> None:
+        if not self.is_authorized():
+            self.respond({"status": "error", "reason": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+            return
+        try:
+            payload = self.read_json_body()
+            new_password = str(payload.get("new_password", ""))
+            set_admin_password(new_password)
+            self.respond({"status": "ready"})
+        except (ValueError, json.JSONDecodeError) as exc:
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:  # pragma: no cover
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or "0")
         if length <= 0:
@@ -623,6 +814,7 @@ def main() -> None:
     setup_logging(args.log_file)
 
     TYPE_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_auth_config()
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     log(f"[cache] listening on http://{args.host}:{args.port}")
     httpd.serve_forever()

@@ -93,6 +93,48 @@ The service installer:
   - `logs/aircraft-image-cache.log`
 - Logs rotate daily and keep the previous 7 rotated log files.
 
+## Aircraft Image Cache
+
+Aircraft images are cached on demand. When the web interface requests an ICAO
+aircraft type, the cache service first checks for a matching local image. If no
+usable cached image exists, the service:
+
+1. Searches Wikipedia for a likely aircraft name based on the ICAO type code.
+2. Uses that name to search Wikimedia Commons for an aircraft photo.
+3. Scores the results and rejects unsupported files, document thumbnails, and
+   results whose titles indicate that they are not aircraft photos.
+4. Downloads the selected image and records its name, caption, source, and
+   Wikimedia file title.
+
+Cached images and their `index.json` metadata file are stored under
+`assets/aircraft/types/`. A later request for the same type uses the local copy
+instead of repeating the online search. Cache activity and rejected searches
+are recorded in `logs/aircraft-image-cache.log`.
+
+## Edit Aircraft
+
+Use **Edit Aircraft** from the History or History Stats menu to correct an
+aircraft type's cached name, caption, source information, or image. Log in with
+the admin password, then enter an ICAO aircraft type code. As you type, the page
+suggests matching types already recorded in the history database.
+
+- **Load** displays the current cache entry and image, if one exists.
+- **Save Details** updates the name, caption, and source information without
+  changing the cached image.
+- **Search Image & Save** saves the entered details and runs the normal image
+  cache search again. Images found this way pass through the cache service's
+  aircraft-image checks.
+- **Download URL & Save** downloads the image from the supplied direct URL and
+  saves the entered details. This is a fallback when the normal search cannot
+  find a suitable image; direct downloads do not use the normal search checks.
+
+## Change Admin Password
+
+Default password: `changeme`
+
+Change it on first use. To reset it, delete `data/aircraft-admin-auth.json` and
+restart the aircraft image cache service.
+
 ## URLs
 
 After installation, the main pages are:
