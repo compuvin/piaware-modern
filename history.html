@@ -428,6 +428,7 @@
 				var directServiceHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
 				var historyApiBases = [window.MODERN_HISTORY_API_BASE || ""];
 				var imageCacheApiBases = [window.MODERN_IMAGE_CACHE_API_BASE || ""];
+				var cartoAPIKey = "";
 				var initialParams = new URLSearchParams(window.location.search || "");
 				var selectedIcao = null;
 				var selectedFlightId = null;
@@ -491,6 +492,22 @@
 
 				function imageCacheUrls(type) {
 					return buildServiceUrls("/resolve?type=" + encodeURIComponent(type), imageCacheApiBases, cacheServicePort);
+				}
+
+				function settingsUrls() {
+					return buildServiceUrls("/settings/public", imageCacheApiBases, cacheServicePort);
+				}
+
+				function cartoBasemapUrl(style) {
+					var url = "https://{a-z}.basemaps.cartocdn.com/" + style + "/{z}/{x}/{y}.png";
+					return cartoAPIKey ? url + "?key=" + encodeURIComponent(cartoAPIKey) : url;
+				}
+
+				function loadCartoAPIKey() {
+					return fetchJsonWithFallback(settingsUrls())
+						.then(function(payload) {
+							cartoAPIKey = String(payload.carto_api_key || "").trim();
+						});
 				}
 
 				function fmtTs(ts) {
@@ -669,7 +686,9 @@
 						layers: [
 							new ol.layer.Tile({
 								source: new ol.source.OSM({
-									url: "https://{a-z}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"
+									url: cartoBasemapUrl("dark_nolabels"),
+									attributions: 'Courtesy of <a href="https://carto.com">CARTO.com</a>'
+										+ ' using data by <a href="https://www.openstreetmap.org">OpenStreetMap</a>, under <a href="https://www.openstreetmap.org/copyright">ODbL</a>.'
 								})
 							}),
 							pathLayer
@@ -923,7 +942,7 @@
 				}
 
 					document.addEventListener("DOMContentLoaded", function() {
-					initMap();
+					loadCartoAPIKey().then(initMap, initMap);
 					setClock();
 					window.setInterval(setClock, 500);
 					document.getElementById("history_search_button").addEventListener("click", runSearch);

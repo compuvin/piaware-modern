@@ -135,6 +135,17 @@ Default password: `changeme`
 Change it on first use. To reset it, delete `data/aircraft-admin-auth.json` and
 restart the aircraft image cache service.
 
+## CARTO Basemap API Key
+
+CARTO raster basemaps require an API key. Request a key from the
+[CARTO basemap page](https://carto.com/basemaps/apikey/), then save it in the
+**CARTO Basemap API Key** section of the Admin page. The key is stored on the
+server in `data/site-settings.json` and applies to Live View and History maps
+on every device.
+
+The key is included in browser requests to CARTO and should not be treated as
+a server-side secret.
+
 ## URLs
 
 After installation, the main pages are:

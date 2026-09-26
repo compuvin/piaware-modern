@@ -155,6 +155,18 @@
 			<section class="adminPanel">
 				<h2 class="adminPanelTitle">Admin</h2>
 				<div class="adminSection">
+					<h3 class="adminSectionTitle">CARTO Basemap API Key</h3>
+					<div class="adminField">
+						<label class="adminLabel" for="carto_api_key">API Key</label>
+						<input id="carto_api_key" class="adminInput" type="password" autocomplete="off" spellcheck="false">
+						<div class="adminHint">Saved on this server and used by CARTO maps on every device. Save a blank value to clear the key.</div>
+					</div>
+					<div class="adminButtonRow">
+						<button id="save_carto_key_button" class="button buttonHeader" type="button"><span class="buttonText">Save API Key</span></button>
+					</div>
+					<div id="carto_status" class="adminStatus">Loading CARTO settings...</div>
+				</div>
+				<div class="adminSection">
 					<h3 class="adminSectionTitle">Change Admin Password</h3>
 					<div class="adminField">
 						<label class="adminLabel" for="new_password">Password</label>
@@ -257,6 +269,12 @@
 					});
 				}
 
+				function getJson(path) {
+					return fetchJsonWithFallback(cacheUrls(path), function() {
+						return { headers: authHeaders({}) };
+					});
+				}
+
 				function loadAuthStatus() {
 					fetchJsonWithFallback(cacheUrls("/auth/status"))
 						.then(function(payload) {
@@ -277,6 +295,42 @@
 				function showPasswordPanel() {
 					el("login_panel").classList.add("hidden");
 					el("admin_panel").classList.remove("hidden");
+					loadCartoSettings();
+				}
+
+				function loadCartoSettings() {
+					el("carto_status").textContent = "Loading CARTO settings...";
+					getJson("/settings/public")
+						.then(function(payload) {
+							el("carto_api_key").value = payload.carto_api_key || "";
+							el("carto_status").textContent = payload.carto_api_key
+								? "A CARTO API key is configured."
+								: "No CARTO API key is configured.";
+						})
+						.catch(function(error) {
+							el("carto_status").textContent = "Unable to load CARTO settings: " + error.message;
+						});
+				}
+
+				function saveCartoAPIKey() {
+					if (!authToken) {
+						showLogin();
+						setLoginStatus("Log in before changing CARTO settings.");
+						return;
+					}
+					el("carto_status").textContent = "Saving CARTO API key...";
+					postJson("/settings/carto", {
+						carto_api_key: el("carto_api_key").value.trim()
+					})
+						.then(function(payload) {
+							el("carto_api_key").value = payload.carto_api_key || "";
+							el("carto_status").textContent = payload.carto_api_key
+								? "CARTO API key saved. Maps will use it when loaded or refreshed."
+								: "CARTO API key cleared.";
+						})
+						.catch(function(error) {
+							el("carto_status").textContent = "Unable to save CARTO API key: " + error.message;
+						});
 				}
 
 				function login() {
@@ -350,6 +404,7 @@
 				}
 
 				el("login_button").addEventListener("click", login);
+				el("save_carto_key_button").addEventListener("click", saveCartoAPIKey);
 				el("change_password_button").addEventListener("click", changePassword);
 				el("logout_button").addEventListener("click", logout);
 				el("admin_password").addEventListener("keydown", function(event) {

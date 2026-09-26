@@ -283,6 +283,8 @@ function initialize() {
         // Set page basics
         document.title = PageName;
 
+        loadCartoAPIKey();
+
         flightFeederCheck();
 
         setStatsLink();

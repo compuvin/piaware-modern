@@ -5,6 +5,8 @@ data/flight_history.sqlite3
 data/flight_history.sqlite3-shm
 data/flight_history.sqlite3-wal
 data/aircraft-admin-auth.json
+data/site-settings.json
+data/site-settings.tmp
 data/backups/
 assets/aircraft/types/
 logs/

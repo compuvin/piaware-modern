@@ -30,12 +30,14 @@ PROJECT_ROOT = SERVICE_ROOT.parent
 TYPE_DIR = PROJECT_ROOT / "assets" / "aircraft" / "types"
 INDEX_PATH = TYPE_DIR / "index.json"
 AUTH_PATH = PROJECT_ROOT / "data" / "aircraft-admin-auth.json"
+SETTINGS_PATH = PROJECT_ROOT / "data" / "site-settings.json"
 DEFAULT_LOG_PATH = PROJECT_ROOT / "logs" / "aircraft-image-cache.log"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "piaware-modern-aircraft-cache/1.0"
 LOCK = threading.Lock()
 AUTH_LOCK = threading.Lock()
+SETTINGS_LOCK = threading.Lock()
 LOGGER = logging.getLogger("piaware-modern-aircraft-cache")
 DEFAULT_ADMIN_PASSWORD = "changeme"
 PASSWORD_HASH_ITERATIONS = 260_000
@@ -146,6 +148,44 @@ def save_index(index: dict[str, Any]) -> None:
     TYPE_DIR.mkdir(parents=True, exist_ok=True)
     with INDEX_PATH.open("w") as fh:
         json.dump(index, fh, indent=2, sort_keys=True)
+
+
+def load_site_settings() -> dict[str, Any]:
+    with SETTINGS_LOCK:
+        if not SETTINGS_PATH.exists():
+            return {}
+        with SETTINGS_PATH.open() as fh:
+            payload = json.load(fh)
+        return payload if isinstance(payload, dict) else {}
+
+
+def save_site_settings(settings: dict[str, Any]) -> None:
+    with SETTINGS_LOCK:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = SETTINGS_PATH.with_suffix(".tmp")
+        with temporary_path.open("w") as fh:
+            json.dump(settings, fh, indent=2, sort_keys=True)
+        os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, SETTINGS_PATH)
+
+
+def public_site_settings() -> dict[str, str]:
+    settings = load_site_settings()
+    return {"carto_api_key": str(settings.get("carto_api_key", ""))}
+
+
+def set_carto_api_key(api_key: str) -> None:
+    api_key = str(api_key or "").strip()
+    if len(api_key) > 1000:
+        raise ValueError("CARTO API key is too long")
+
+    settings = load_site_settings()
+    if api_key:
+        settings["carto_api_key"] = api_key
+    else:
+        settings.pop("carto_api_key", None)
+    save_site_settings(settings)
+    log(f"[cache] CARTO API key {'saved' if api_key else 'cleared'}")
 
 
 def hash_password(password: str, salt: bytes | None = None) -> dict[str, Any]:
@@ -652,6 +692,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/auth/status":
             self.respond(auth_status())
             return
+        if parsed.path == "/settings/public":
+            self.respond(public_site_settings())
+            return
 
         if parsed.path not in {"/resolve", "/entry"}:
             self.respond({"status": "error", "reason": "not_found"}, HTTPStatus.NOT_FOUND)
@@ -688,6 +731,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/auth/password":
             self.handle_password_change()
+            return
+        if parsed.path == "/settings/carto":
+            self.handle_carto_settings()
             return
 
         if parsed.path not in {"/entry", "/download"}:
@@ -787,6 +833,19 @@ class Handler(BaseHTTPRequestHandler):
             new_password = str(payload.get("new_password", ""))
             set_admin_password(new_password)
             self.respond({"status": "ready"})
+        except (ValueError, json.JSONDecodeError) as exc:
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:  # pragma: no cover
+            self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def handle_carto_settings(self) -> None:
+        if not self.is_authorized():
+            self.respond({"status": "error", "reason": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+            return
+        try:
+            payload = self.read_json_body()
+            set_carto_api_key(payload.get("carto_api_key", ""))
+            self.respond({"status": "ready", **public_site_settings()})
         except (ValueError, json.JSONDecodeError) as exc:
             self.respond({"status": "error", "reason": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:  # pragma: no cover

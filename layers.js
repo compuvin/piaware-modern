@@ -4,6 +4,54 @@
 // Base layers configuration
 
 const boundsOfUSA = [ [-194.796845, 73.124945] ,[-179.980517, 5.965754], [-62.470849, 20.303418], [-60.017658,48.690960]]
+var CartoAPIKey = "";
+
+function cartoBasemapUrl(style) {
+        var url = "https://{a-z}.basemaps.cartocdn.com/" + style + "/{z}/{x}/{y}.png";
+        return CartoAPIKey ? url + "?key=" + encodeURIComponent(CartoAPIKey) : url;
+}
+
+function applyCartoAPIKey(apiKey) {
+        CartoAPIKey = String(apiKey || "").trim();
+        if (typeof layerGroup === "undefined" || !layerGroup) {
+                return;
+        }
+        ol.control.LayerSwitcher.forEachRecursive(layerGroup, function(layer) {
+                var style = layer.get("cartoStyle");
+                if (style && layer.getSource() && layer.getSource().setUrl) {
+                        layer.getSource().setUrl(cartoBasemapUrl(style));
+                }
+        });
+}
+
+function loadCartoAPIKey() {
+        var directHost = window.MODERN_DIRECT_SERVICE_HOST || "piaware.local";
+        var configuredBase = String(window.MODERN_IMAGE_CACHE_API_BASE || "").replace(/\/+$/, "");
+        var urls = [];
+        if (configuredBase) {
+                urls.push(configuredBase + "/settings/public");
+        }
+        urls.push((window.location.protocol || "http:") + "//" + directHost + ":8765/settings/public");
+
+        function attempt() {
+                if (!urls.length) {
+                        return Promise.resolve();
+                }
+                return fetch(urls.shift())
+                        .then(function(response) {
+                                if (!response.ok) {
+                                        throw new Error("settings request failed");
+                                }
+                                return response.json();
+                        })
+                        .then(function(settings) {
+                                applyCartoAPIKey(settings.carto_api_key);
+                        })
+                        .catch(attempt);
+        }
+
+        return attempt();
+}
 
 function bound(coords) {
         let e =  ol.extent.boundingExtent(coords);
@@ -62,44 +110,48 @@ function createBaseLayers() {
 
         world.push(new ol.layer.Tile({
                 source: new ol.source.OSM({
-                        "url" : "https://{a-z}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+                        "url" : cartoBasemapUrl("dark_all"),
                         "attributions" : 'Courtesy of <a href="https://carto.com">CARTO.com</a>'
                                + ' using data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
                 }),
                 name: 'carto_dark_all',
+                cartoStyle: 'dark_all',
                 title: 'CARTO.com Dark',
                 type: 'base',
         }));
 
         world.push(new ol.layer.Tile({
                 source: new ol.source.OSM({
-                        "url" : "https://{a-z}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
+                        "url" : cartoBasemapUrl("dark_nolabels"),
                         "attributions" : 'Courtesy of <a href="https://carto.com">CARTO.com</a>'
                                + ' using data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
                 }),
                 name: 'carto_dark_nolabels',
+                cartoStyle: 'dark_nolabels',
                 title: 'CARTO.com Dark (No Labels)',
                 type: 'base',
         }));
 
         world.push(new ol.layer.Tile({
                 source: new ol.source.OSM({
-                        "url" : "https://{a-z}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+                        "url" : cartoBasemapUrl("light_all"),
                         "attributions" : 'Courtesy of <a href="https://carto.com">CARTO.com</a>'
                                + ' using data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
                 }),
                 name: 'carto_light_all',
+                cartoStyle: 'light_all',
                 title: 'CARTO.com Light',
                 type: 'base',
         }));
 
         world.push(new ol.layer.Tile({
                 source: new ol.source.OSM({
-                        "url" : "https://{a-z}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",
+                        "url" : cartoBasemapUrl("light_nolabels"),
                         "attributions" : 'Courtesy of <a href="https://carto.com">CARTO.com</a>'
                                + ' using data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
                 }),
                 name: 'carto_light_nolabels',
+                cartoStyle: 'light_nolabels',
                 title: 'CARTO.com Light (No Labels)',
                 type: 'base',
         }));
